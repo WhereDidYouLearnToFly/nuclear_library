@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nuclear Detonations Map // ISOTOPEDIA</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&display=swap">
+<link rel="stylesheet" href="/assets/css/nav.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/assets/js/nav.js"></script>
+<script src="data.js"></script>
+<style>
+:root {
+  --bg:         #080c07;
+  --surface:    #0e160c;
+  --surface2:   #162013;
+  --border:     #1e3018;
+  --green:      #4ec94e;
+  --green-dim:  #2a6b2a;
+  --green-glow: rgba(78,201,78,0.15);
+  --amber:      #d4820a;
+  --amber-dim:  #7a4a05;
+  --amber-glow: rgba(212,130,10,0.15);
+  --text:       #c2d4b0;
+  --text-dim:   #6a8a5a;
+  --scan-line:  rgba(0,0,0,0.06);
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+}
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 3px, var(--scan-line) 3px, var(--scan-line) 4px);
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+.app-body { display: flex; flex: 1; overflow: hidden; }
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+#sidebar {
+  width: 220px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+.sb-section { padding: 10px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.sb-section.grow { flex: 1; overflow-y: auto; min-height: 0; }
+.sb-sources { flex-shrink: 0; border-top: 1px solid var(--border); padding: 8px 12px; }
+.sources-list { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
+.sources-list a { font-size: 9px; color: var(--text-dim); text-decoration: none; transition: color .15s; letter-spacing: .3px; line-height: 1.4; }
+.sources-list a:hover { color: var(--green); }
+.sb-title { font-size: 10px; text-transform: uppercase; letter-spacing: .1em; color: var(--amber-dim); margin-bottom: 8px; }
+
+/* Country chips */
+.country-chip {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  font-size: 11px;
+  color: var(--text-dim);
+  transition: all .15s;
+  margin-bottom: 2px;
+  user-select: none;
+}
+.country-chip:hover { background: rgba(255,255,255,.04); }
+.country-chip.off { opacity: .25; }
+.country-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+.country-cnt { margin-left: auto; font-size: 10px; color: var(--text-dim); }
+
+/* Delivery chips */
+.delivery-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  font-size: 10px;
+  cursor: pointer;
+  margin: 2px 2px 0 0;
+  color: var(--text-dim);
+  transition: all .15s;
+}
+.delivery-chip.on { border-color: var(--amber-dim); color: var(--amber); background: var(--amber-glow); }
+
+/* Decade chips */
+.decade-chip {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  font-size: 10px;
+  cursor: pointer;
+  margin: 2px 2px 0 0;
+  color: var(--text-dim);
+  transition: all .15s;
+}
+.decade-chip.on { border-color: var(--green-dim); color: var(--green); background: var(--green-glow); }
+
+/* ── Map ──────────────────────────────────────────────────────────────────── */
+#map { flex: 1; background: #050908; }
+
+.leaflet-container { background: #050908; font-family: 'Share Tech Mono', monospace; }
+.leaflet-bar a { background: var(--surface) !important; color: var(--green) !important; border-color: var(--border) !important; }
+.leaflet-bar a:hover { background: var(--surface2) !important; }
+.leaflet-control-attribution { background: rgba(14,22,12,.8) !important; color: var(--text-dim) !important; font-size: 9px !important; }
+.leaflet-control-attribution a { color: var(--green-dim) !important; }
+.leaflet-popup-content-wrapper { background: var(--surface) !important; border: 1px solid var(--amber-dim) !important; border-radius: 3px !important; box-shadow: 0 0 20px rgba(212,130,10,.25) !important; color: var(--text) !important; }
+.leaflet-popup-tip { background: var(--amber-dim) !important; }
+.leaflet-popup-close-button { color: var(--amber) !important; font-size: 16px !important; }
+
+/* ── Popup ────────────────────────────────────────────────────────────────── */
+.pp-site-name { font-family: 'VT323', monospace; font-size: 20px; letter-spacing: 1px; margin-bottom: 2px; }
+.pp-site-meta { font-size: 10px; color: var(--text-dim); margin-bottom: 6px; }
+.pp-list      { max-height: 220px; overflow-y: auto; border-top: 1px solid var(--border); }
+.pp-row       { display: grid; grid-template-columns: 36px 1fr 56px 18px; gap: 0 6px; padding: 4px 2px; border-bottom: 1px solid var(--border); font-size: 11px; align-items: start; }
+.pp-row-year  { color: var(--text-dim); padding-top: 1px; }
+.pp-row-name  { color: var(--text); }
+.pp-row-yield { color: var(--amber); text-align: right; white-space: nowrap; padding-top: 1px; }
+.pp-row-type  { text-align: center; padding-top: 1px; }
+.pp-notable-tag { font-size: 9px; color: var(--amber); display: block; line-height: 1.3; margin-top: 1px; }
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+footer {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 4px 16px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  font-size: 10px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  z-index: 1000;
+}
+#count-badge { letter-spacing: .05em; color: var(--amber-dim); }
+#hover-info  { margin-left: auto; color: var(--text-dim); }
+.sb-toggle {
+  display: none; position: fixed; bottom: 20px; left: 20px; z-index: 600;
+  background: var(--surface); border: 1px solid var(--green-dim); color: var(--green);
+  font-family: 'Share Tech Mono', monospace; font-size: 12px; letter-spacing: 2px;
+  padding: 8px 16px; cursor: pointer; transition: all .15s;
+}
+.sb-toggle:hover { background: var(--green-glow); }
+.sb-overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.6); z-index: 499; }
+.sb-overlay.open { display: block; }
+@media (max-width: 640px) {
+  .sb-toggle { display: block; }
+  .app-body { position: relative; }
+  #sidebar { display: none; position: absolute; top: 0; left: 0; height: 100%; z-index: 500; }
+  #sidebar.open { display: flex; }
+}
+</style>
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<div class="app-body">
+  <div class="sb-overlay" id="sb-overlay"></div>
+  <button class="sb-toggle" id="sb-toggle">&#9776; FILTERS</button>
+
+  <div id="sidebar">
+    <div class="sb-section">
+      <div class="sb-title" id="t-country">NATION</div>
+      <div id="country-filters"></div>
+    </div>
+    <div class="sb-section">
+      <div class="sb-title" id="t-delivery">DELIVERY TYPE</div>
+      <div id="delivery-filters"></div>
+    </div>
+    <div class="sb-section grow">
+      <div class="sb-title" id="t-decade">DECADE</div>
+      <div id="decade-filters"></div>
+    </div>
+    <div class="sb-sources">
+      <div class="sb-title">SOURCES</div>
+      <div class="sources-list">
+        <a href="https://www.johnstonsarchive.net/nuclear/" target="_blank" rel="noopener">Johnston's Archive of Nuclear Tests</a>
+        <a href="https://www.ctbto.org/" target="_blank" rel="noopener">CTBTO Preparatory Commission</a>
+        <a href="https://www.sipri.org/research/armament-and-disarmament/nuclear-disarmament" target="_blank" rel="noopener">SIPRI Nuclear Forces Data</a>
+        <a href="https://en.wikipedia.org/wiki/List_of_nuclear_weapons_tests" target="_blank" rel="noopener">Wikipedia: Nuclear Weapons Tests</a>
+      </div>
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+</div>
+
+<footer>
+  <span id="count-badge">— detonations</span>
+  <span id="t-click">// CLICK MARKER FOR DETAILS</span>
+  <span id="hover-info"></span>
+</footer>
+
+<script>
+// ── i18n ──────────────────────────────────────────────────────────────────────
+const LANG = new URLSearchParams(location.search).get('lang') || 'en';
+
+const TR = {
+  en: {
+    page_title:  'Nuclear Detonations Map // ISOTOPEDIA',
+    t_country:   'NATION',
+    t_delivery:  'DELIVERY TYPE',
+    t_decade:    'DECADE',
+    t_click:     '// CLICK MARKER FOR DETAILS',
+    detonations: 'detonations shown',
+    p_country:   'Nation',
+    p_year:      'Year',
+    p_yield:     'Yield',
+    p_delivery:  'Delivery',
+    p_site:      'Site',
+    kt:          'kt',
+    test_s:      'test',
+    test_p:      'tests',
+    dec_s:       's',
+    del_atmospheric:    'Atmospheric',
+    del_airdrop:        'Airdrop',
+    del_underground:    'Underground',
+    del_underwater:     'Underwater',
+    del_exoatmospheric: 'Exoatmospheric',
+    country_US: 'United States',
+    country_SU: 'USSR',
+    country_RU: 'Russian Federation',
+    country_FR: 'France',
+    country_GB: 'United Kingdom',
+    country_CN: 'China',
+    country_IN: 'India',
+    country_PK: 'Pakistan',
+    country_KP: 'North Korea',
+  },
+  fr: {
+    page_title:  'Carte des Détonations // ISOTOPEDIA',
+    t_country:   'NATION',
+    t_delivery:  'TYPE DE TIR',
+    t_decade:    'DÉCENNIE',
+    t_click:     '// CLIQUER POUR DÉTAILS',
+    detonations: 'détonations affichées',
+    p_country:   'Nation',
+    p_year:      'Année',
+    p_yield:     'Puissance',
+    p_delivery:  'Type de tir',
+    p_site:      'Site',
+    kt:          'kt',
+    test_s:      'essai',
+    test_p:      'essais',
+    dec_s:       '',
+    del_atmospheric:    'Atmosphérique',
+    del_airdrop:        'Aérien',
+    del_underground:    'Souterrain',
+    del_underwater:     'Sous-marin',
+    del_exoatmospheric: 'Exoatmosphérique',
+    country_US: 'États-Unis',
+    country_SU: 'URSS',
+    country_RU: 'Fédération de Russie',
+    country_FR: 'France',
+    country_GB: 'Royaume-Uni',
+    country_CN: 'Chine',
+    country_IN: 'Inde',
+    country_PK: 'Pakistan',
+    country_KP: 'Corée du Nord',
+  },
+  ru: {
+    page_title:  'Карта детонаций // ISOTOPEDIA',
+    t_country:   'СТРАНА',
+    t_delivery:  'ТИП ВЗРЫВА',
+    t_decade:    'ДЕСЯТИЛЕТИЕ',
+    t_click:     '// НАЖМИТЕ МАРКЕР ДЛЯ ДЕТАЛЕЙ',
+    detonations: 'детонаций отображено',
+    p_country:   'Страна',
+    p_year:      'Год',
+    p_yield:     'Мощность',
+    p_delivery:  'Тип',
+    p_site:      'Место',
+    kt:          'кт',
+    test_s:      'испытание',
+    test_p:      'испытаний',
+    dec_s:       '-е',
+    del_atmospheric:    'Атмосферный',
+    del_airdrop:        'Авиационный',
+    del_underground:    'Подземный',
+    del_underwater:     'Подводный',
+    del_exoatmospheric: 'Экзоатмосферный',
+    country_US: 'США',
+    country_SU: 'СССР',
+    country_RU: 'Российская Федерация',
+    country_FR: 'Франция',
+    country_GB: 'Великобритания',
+    country_CN: 'Китай',
+    country_IN: 'Индия',
+    country_PK: 'Пакистан',
+    country_KP: 'Северная Корея',
+  },
+  ua: {
+    page_title:  'Карта детонацій // ISOTOPEDIA',
+    t_country:   'КРАЇНА',
+    t_delivery:  'ТИП ВИБУХУ',
+    t_decade:    'ДЕСЯТИЛІТТЯ',
+    t_click:     '// НАТИСНІТЬ МАРКЕР ДЛЯ ДЕТАЛЕЙ',
+    detonations: 'детонацій відображено',
+    p_country:   'Країна',
+    p_year:      'Рік',
+    p_yield:     'Потужність',
+    p_delivery:  'Тип',
+    p_site:      'Місце',
+    kt:          'кт',
+    test_s:      'випробування',
+    test_p:      'випробувань',
+    dec_s:       '-х',
+    del_atmospheric:    'Атмосферний',
+    del_airdrop:        'Авіаційний',
+    del_underground:    'Підземний',
+    del_underwater:     'Підводний',
+    del_exoatmospheric: 'Екзоатмосферний',
+    country_US: 'США',
+    country_SU: 'СРСР',
+    country_RU: 'Російська Федерація',
+    country_FR: 'Франція',
+    country_GB: 'Велика Британія',
+    country_CN: 'Китай',
+    country_IN: 'Індія',
+    country_PK: 'Пакистан',
+    country_KP: 'Північна Корея',
+  },
+};
+function t(k) { return (TR[LANG] || TR.en)[k] || TR.en[k] || k; }
+
+// ── Site name translations ────────────────────────────────────────────────────
+const SITE_NAMES = {
+  fr: {
+    "Trinity Site, New Mexico":       "Site Trinity, Nouveau-Mexique",
+    "Hiroshima, Japan":               "Hiroshima, Japon",
+    "Nagasaki, Japan":                "Nagasaki, Japon",
+    "Bikini Atoll":                   "Atoll Bikini",
+    "Enewetak Atoll":                 "Atoll Énivetok",
+    "Nevada Test Site":               "Site d'essais du Nevada",
+    "Johnston Atoll":                 "Atoll Johnston",
+    "Semipalatinsk":                  "Semipalatinsk",
+    "Totsk, Orenburg Oblast":         "Totsk, Oblast d'Orenbourg",
+    "Shagan River, Kazakhstan":       "Rivière Chagan, Kazakhstan",
+    "Novaya Zemlya":                  "Nouvelle-Zemble",
+    "Dnepr, Ukraine":                 "Dniepr, Ukraine",
+    "Reggane, Algeria":               "Reggane, Algérie",
+    "In Ekker, Algeria":              "In Ekker, Algérie",
+    "Mururoa Atoll":                  "Atoll de Mururoa",
+    "Fangataufa Atoll":               "Atoll de Fangataufa",
+    "Monte Bello Islands":            "Îles Monte Bello",
+    "Emu Field, South Australia":     "Emu Field, Australie-Méridionale",
+    "Maralinga, South Australia":     "Maralinga, Australie-Méridionale",
+    "Christmas Island":               "Île Christmas",
+    "Lop Nur, Xinjiang":              "Lop Nor, Xinjiang",
+    "Koh Kambaran, Balochistan":      "Koh Kambaran, Balouchistan",
+    "Kharan Desert, Balochistan":     "Désert de Kharan, Balouchistan",
+    "Punggye-ri, North Hamgyong":     "Punggye-ri, Hamgyong du Nord",
+    "Amchitka Island, Alaska":        "Île Amchitka, Alaska",
+  },
+  ru: {
+    "Trinity Site, New Mexico":       "Тринити, Нью-Мексико",
+    "Hiroshima, Japan":               "Хиросима, Япония",
+    "Nagasaki, Japan":                "Нагасаки, Япония",
+    "Bikini Atoll":                   "Атолл Бикини",
+    "Enewetak Atoll":                 "Атолл Эниветок",
+    "Nevada Test Site":               "Полигон Невада",
+    "Johnston Atoll":                 "Атолл Джонстон",
+    "Semipalatinsk":                  "Семипалатинск",
+    "Totsk, Orenburg Oblast":         "Тоцкое, Оренбургская обл.",
+    "Shagan River, Kazakhstan":       "Р. Шаган, Казахстан",
+    "Azgir, Kazakhstan":              "Азгир, Казахстан",
+    "Kapustin Yar":                   "Капустин Яр",
+    "Novaya Zemlya":                  "Новая Земля",
+    "Dnepr, Ukraine":                 "Днепр, Украина",
+    "Reggane, Algeria":               "Реггане, Алжир",
+    "In Ekker, Algeria":              "Ин-Эккер, Алжир",
+    "Mururoa Atoll":                  "Атолл Муруроа",
+    "Fangataufa Atoll":               "Атолл Фангатауфа",
+    "Monte Bello Islands":            "О-ва Монте-Белло",
+    "Emu Field, South Australia":     "Эму-Филд, Юж. Австралия",
+    "Maralinga, South Australia":     "Маралинга, Юж. Австралия",
+    "Christmas Island":               "О. Рождества",
+    "Lop Nur, Xinjiang":              "Лоп-Нор, Синьцзян",
+    "Pokhran, Rajasthan":             "Покхран, Раджастхан",
+    "Koh Kambaran, Balochistan":      "Кох-Камбаран, Белуджистан",
+    "Kharan Desert, Balochistan":     "Пустыня Харан, Белуджистан",
+    "Punggye-ri, North Hamgyong":     "Пунгери, Сев. Хамгён",
+    "Amchitka Island, Alaska":        "О. Амчитка, Аляска",
+  },
+  ua: {
+    "Trinity Site, New Mexico":       "Трініті, Нью-Мексіко",
+    "Hiroshima, Japan":               "Хіросіма, Японія",
+    "Nagasaki, Japan":                "Нагасакі, Японія",
+    "Bikini Atoll":                   "Атол Бікіні",
+    "Enewetak Atoll":                 "Атол Еніветок",
+    "Nevada Test Site":               "Полігон Невада",
+    "Johnston Atoll":                 "Атол Джонстон",
+    "Semipalatinsk":                  "Семипалатинськ",
+    "Totsk, Orenburg Oblast":         "Тоцьке, Оренбурзька обл.",
+    "Shagan River, Kazakhstan":       "Р. Шаган, Казахстан",
+    "Azgir, Kazakhstan":              "Азгір, Казахстан",
+    "Kapustin Yar":                   "Капустин Яр",
+    "Novaya Zemlya":                  "Нова Земля",
+    "Dnepr, Ukraine":                 "Дніпро, Україна",
+    "Reggane, Algeria":               "Реггане, Алжир",
+    "In Ekker, Algeria":              "Ін-Еккер, Алжир",
+    "Mururoa Atoll":                  "Атол Муруроа",
+    "Fangataufa Atoll":               "Атол Фангатауфа",
+    "Monte Bello Islands":            "О-ви Монте-Белло",
+    "Emu Field, South Australia":     "Ему-Філд, Пд. Австралія",
+    "Maralinga, South Australia":     "Маралінга, Пд. Австралія",
+    "Christmas Island":               "О. Різдва",
+    "Lop Nur, Xinjiang":              "Лоп-Нор, Сіньцзян",
+    "Pokhran, Rajasthan":             "Покхран, Раджастхан",
+    "Koh Kambaran, Balochistan":      "Кох-Камбаран, Белуджистан",
+    "Kharan Desert, Balochistan":     "Пустеля Харан, Белуджистан",
+    "Punggye-ri, North Hamgyong":     "Пунгері, Пн. Хамгьон",
+    "Amchitka Island, Alaska":        "О. Амчітка, Аляска",
+  },
+};
+
+// ── Notable tag translations ──────────────────────────────────────────────────
+const NOTABLE_TRANS = {
+  fr: {
+    "World's first nuclear test":                    "Premier essai nucléaire mondial",
+    "First combat use":                              "Premier emploi militaire",
+    "Second combat use":                             "Deuxième emploi militaire",
+    "World's first thermonuclear device":            "Premier engin thermonucléaire au monde",
+    "Largest US test — 2.5× design yield":           "Plus grand essai américain — 2.5× la puissance prévue",
+    "Largest pure-fission weapon ever":              "Plus grande arme à fission pure jamais testée",
+    "First Nevada test":                             "Premier essai au Nevada",
+    "Only nuclear artillery shell ever fired":       "Seul obus nucléaire jamais tiré",
+    "Largest atmospheric NTS shot":                  "Plus grand tir atmosphérique au Nevada",
+    "First fully contained underground test":        "Premier essai souterrain entièrement confiné",
+    "Largest crater from any US test":               "Plus grand cratère créé par un essai américain",
+    "Largest underground NTS test":                  "Plus grand essai souterrain au Nevada",
+    "Last US nuclear test":                          "Dernier essai nucléaire américain",
+    "High-altitude EMP — disabled satellites":       "IEM de haute altitude — satellites mis hors service",
+    "Largest underground US test ever":              "Plus grand essai souterrain américain",
+    "First Soviet nuclear test":                     "Premier essai nucléaire soviétique",
+    "First Soviet thermonuclear test":               "Premier essai thermonucléaire soviétique",
+    "Live military exercise with 45,000 troops":     "Exercice militaire avec 45 000 soldats",
+    "Peaceful Nuclear Explosion — lake still exists":"Explosion nucléaire pacifique — lac encore existant",
+    "Last Soviet nuclear test":                      "Dernier essai nucléaire soviétique",
+    "Peaceful nuclear excavation":                   "Explosion nucléaire pacifique",
+    "First French nuclear test":                     "Premier essai nucléaire français",
+    "Containment failure — radioactive cloud released":"Défaillance de confinement — nuage radioactif libéré",
+    "First Mururoa test":                            "Premier essai à Mururoa",
+    "First French thermonuclear test":               "Premier essai thermonucléaire français",
+    "First French underground test":                 "Premier essai souterrain français",
+    "Last French nuclear test":                      "Dernier essai nucléaire français",
+    "First British nuclear test":                    "Premier essai nucléaire britannique",
+    "First British thermonuclear test":              "Premier essai thermonucléaire britannique",
+    "Largest British test":                          "Plus grand essai britannique",
+    "Last British atmospheric test":                 "Dernier essai atmosphérique britannique",
+    "First Chinese nuclear test":                    "Premier essai nucléaire chinois",
+    "First Chinese thermonuclear test":              "Premier essai thermonucléaire chinois",
+    "Largest Chinese atmospheric test":              "Plus grand essai atmosphérique chinois",
+    "Last Chinese atmospheric test":                 "Dernier essai atmosphérique chinois",
+    "Last Chinese nuclear test":                     "Dernier essai nucléaire chinois",
+    "First Indian nuclear test":                     "Premier essai nucléaire indien",
+    "First Pakistani nuclear test":                  "Premier essai nucléaire pakistanais",
+    "First North Korean nuclear test":               "Premier essai nucléaire nord-coréen",
+    "Claimed thermonuclear — largest DPRK test":     "Thermonucléaire revendiqué — plus grand essai nord-coréen",
+    "Largest nuclear device ever detonated — 50 Mt": "Plus grand engin nucléaire jamais testé — 50 Mt",
+  },
+  ru: {
+    "World's first nuclear test":                    "Первое ядерное испытание в мире",
+    "First combat use":                              "Первое боевое применение",
+    "Second combat use":                             "Второе боевое применение",
+    "World's first thermonuclear device":            "Первое термоядерное устройство в мире",
+    "Largest US test — 2.5× design yield":           "Крупнейшее испытание США — 2.5× плановой мощности",
+    "Largest pure-fission weapon ever":              "Крупнейшее чисто делительное оружие",
+    "First Nevada test":                             "Первое испытание в Неваде",
+    "Only nuclear artillery shell ever fired":       "Единственный ядерный артиллерийский снаряд",
+    "Largest atmospheric NTS shot":                  "Крупнейший атмосферный взрыв в Неваде",
+    "First fully contained underground test":        "Первое полностью подземное испытание",
+    "Largest crater from any US test":               "Крупнейший кратер от испытаний США",
+    "Largest underground NTS test":                  "Крупнейшее подземное испытание в Неваде",
+    "Last US nuclear test":                          "Последнее ядерное испытание США",
+    "High-altitude EMP — disabled satellites":       "Высотный ЭМИ — вывел спутники из строя",
+    "Largest underground US test ever":              "Крупнейшее подземное испытание США",
+    "First Soviet nuclear test":                     "Первое ядерное испытание СССР",
+    "First Soviet thermonuclear test":               "Первое термоядерное испытание СССР",
+    "Live military exercise with 45,000 troops":     "Военные учения с участием 45 000 солдат",
+    "Peaceful Nuclear Explosion — lake still exists":"Мирный ядерный взрыв — озеро существует по сей день",
+    "Last Soviet nuclear test":                      "Последнее ядерное испытание СССР",
+    "Peaceful nuclear excavation":                   "Мирный ядерный взрыв",
+    "First French nuclear test":                     "Первое ядерное испытание Франции",
+    "Containment failure — radioactive cloud released":"Нарушение герметичности — выброс радиоактивного облака",
+    "First Mururoa test":                            "Первое испытание на Муруроа",
+    "First French thermonuclear test":               "Первое французское термоядерное испытание",
+    "First French underground test":                 "Первое французское подземное испытание",
+    "Last French nuclear test":                      "Последнее ядерное испытание Франции",
+    "First British nuclear test":                    "Первое британское ядерное испытание",
+    "First British thermonuclear test":              "Первое британское термоядерное испытание",
+    "Largest British test":                          "Крупнейшее британское испытание",
+    "Last British atmospheric test":                 "Последнее атмосферное испытание Великобритании",
+    "First Chinese nuclear test":                    "Первое ядерное испытание Китая",
+    "First Chinese thermonuclear test":              "Первое китайское термоядерное испытание",
+    "Largest Chinese atmospheric test":              "Крупнейшее атмосферное испытание Китая",
+    "Last Chinese atmospheric test":                 "Последнее атмосферное испытание Китая",
+    "Last Chinese nuclear test":                     "Последнее ядерное испытание Китая",
+    "First Indian nuclear test":                     "Первое ядерное испытание Индии",
+    "First Pakistani nuclear test":                  "Первое ядерное испытание Пакистана",
+    "First North Korean nuclear test":               "Первое ядерное испытание Северной Кореи",
+    "Claimed thermonuclear — largest DPRK test":     "Заявлен термоядерным — крупнейшее испытание КНДР",
+    "Largest nuclear device ever detonated — 50 Mt": "Крупнейшее ядерное устройство в истории — 50 Мт",
+  },
+  ua: {
+    "World's first nuclear test":                    "Перше ядерне випробування у світі",
+    "First combat use":                              "Перше бойове застосування",
+    "Second combat use":                             "Друге бойове застосування",
+    "World's first thermonuclear device":            "Перший термоядерний пристрій у світі",
+    "Largest US test — 2.5× design yield":           "Найбільше випробування США — 2.5× проектної потужності",
+    "Largest pure-fission weapon ever":              "Найбільша суто поділова зброя",
+    "First Nevada test":                             "Перше випробування в Неваді",
+    "Only nuclear artillery shell ever fired":       "Єдиний ядерний артилерійський снаряд",
+    "Largest atmospheric NTS shot":                  "Найбільший атмосферний вибух в Неваді",
+    "First fully contained underground test":        "Перше повністю підземне випробування",
+    "Largest crater from any US test":               "Найбільший кратер від випробувань США",
+    "Largest underground NTS test":                  "Найбільше підземне випробування в Неваді",
+    "Last US nuclear test":                          "Останнє ядерне випробування США",
+    "High-altitude EMP — disabled satellites":       "Висотний ЕМІ — вивів супутники з ладу",
+    "Largest underground US test ever":              "Найбільше підземне випробування США",
+    "First Soviet nuclear test":                     "Перше ядерне випробування СРСР",
+    "First Soviet thermonuclear test":               "Перше термоядерне випробування СРСР",
+    "Live military exercise with 45,000 troops":     "Військові навчання за участю 45 000 солдат",
+    "Peaceful Nuclear Explosion — lake still exists":"Мирний ядерний вибух — озеро існує досі",
+    "Last Soviet nuclear test":                      "Останнє ядерне випробування СРСР",
+    "Peaceful nuclear excavation":                   "Мирний ядерний вибух",
+    "First French nuclear test":                     "Перше ядерне випробування Франції",
+    "Containment failure — radioactive cloud released":"Порушення герметичності — викид радіоактивної хмари",
+    "First Mururoa test":                            "Перше випробування на Муруроа",
+    "First French thermonuclear test":               "Перше французьке термоядерне випробування",
+    "First French underground test":                 "Перше французьке підземне випробування",
+    "Last French nuclear test":                      "Останнє ядерне випробування Франції",
+    "First British nuclear test":                    "Перше британське ядерне випробування",
+    "First British thermonuclear test":              "Перше британське термоядерне випробування",
+    "Largest British test":                          "Найбільше британське випробування",
+    "Last British atmospheric test":                 "Останнє атмосферне випробування Великобританії",
+    "First Chinese nuclear test":                    "Перше ядерне випробування Китаю",
+    "First Chinese thermonuclear test":              "Перше китайське термоядерне випробування",
+    "Largest Chinese atmospheric test":              "Найбільше атмосферне випробування Китаю",
+    "Last Chinese atmospheric test":                 "Останнє атмосферне випробування Китаю",
+    "Last Chinese nuclear test":                     "Останнє ядерне випробування Китаю",
+    "First Indian nuclear test":                     "Перше ядерне випробування Індії",
+    "First Pakistani nuclear test":                  "Перше ядерне випробування Пакистану",
+    "First North Korean nuclear test":               "Перше ядерне випробування Північної Кореї",
+    "Claimed thermonuclear — largest DPRK test":     "Заявлений термоядерний — найбільше випробування КНДР",
+    "Largest nuclear device ever detonated — 50 Mt": "Найбільший ядерний пристрій в історії — 50 Мт",
+  },
+};
+
+// ── Init translations ─────────────────────────────────────────────────────────
+document.title = t('page_title');
+document.getElementById('t-country').textContent  = t('t_country');
+document.getElementById('t-delivery').textContent = t('t_delivery');
+document.getElementById('t-decade').textContent   = t('t_decade');
+document.getElementById('t-click').textContent    = t('t_click');
+
+// ── Filter state ──────────────────────────────────────────────────────────────
+const activeCountries  = new Set(Object.keys(COUNTRY_META));
+const activeDeliveries = new Set(Object.keys(DELIVERY_META));
+const activeDecades    = new Set(['1940','1950','1960','1970','1980','1990','2000','2010']);
+
+function decade(year) { return String(Math.floor(year / 10) * 10); }
+
+// ── Map setup ─────────────────────────────────────────────────────────────────
+const map = L.map('map', { center: [25, 10], zoom: 2, minZoom: 2, maxZoom: 12 });
+
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors',
+  maxZoom: 16,
+}).addTo(map);
+
+// ── Marker helpers ────────────────────────────────────────────────────────────
+function markerRadius(yield_kt) {
+  if (!yield_kt || yield_kt <= 0) return 4;
+  return Math.max(4, Math.min(18, Math.log10(yield_kt + 1) * 4.5));
+}
+
+function yieldLabel(kt) {
+  if (!kt || kt <= 0) return '< 1 kt';
+  if (kt >= 1000) return (kt / 1000).toFixed(1) + ' Mt';
+  return kt + ' kt';
+}
+
+// ── Group detonations by site ─────────────────────────────────────────────────
+const siteGroups = {};
+DETONATIONS.forEach(d => {
+  const key = d[7];
+  if (!siteGroups[key]) siteGroups[key] = [];
+  siteGroups[key].push(d);
+});
+Object.values(siteGroups).forEach(g => g.sort((a, b) => a[4] - b[4]));
+
+// ── Build one marker per site ─────────────────────────────────────────────────
+const markerGroup = L.layerGroup().addTo(map);
+
+const allSiteMarkers = Object.entries(siteGroups).map(([siteName, tests]) => {
+  const country  = tests[0][1];
+  const meta     = COUNTRY_META[country] || { color: '#888', name: country };
+  const lat      = tests[0][2];
+  const lon      = tests[0][3];
+  const maxYield = Math.max(...tests.map(d => d[5] || 0));
+  const hasNotable = tests.some(d => d[8]);
+
+  const marker = L.circleMarker([lat, lon], {
+    radius: markerRadius(maxYield),
+    color: meta.color,
+    fillColor: meta.color,
+    fillOpacity: tests.length > 1 ? 0.45 : 0.6,
+    weight: hasNotable ? 2 : 1,
+    opacity: 0.9,
+  });
+
+  const translatedSite = (SITE_NAMES[LANG] || {})[siteName] || siteName;
+  const rows = tests.map(([name, , , , year, yield_kt, delivery, , notable]) => {
+    const tName = name.startsWith(siteName)
+      ? translatedSite + name.slice(siteName.length)
+      : name;
+    const tNotable = notable ? ((NOTABLE_TRANS[LANG] || {})[notable] || notable) : null;
+    return `
+    <div class="pp-row">
+      <span class="pp-row-year">${year}</span>
+      <span class="pp-row-name">${tName}${tNotable ? `<span class="pp-notable-tag">${tNotable}</span>` : ''}</span>
+      <span class="pp-row-yield">${yieldLabel(yield_kt)}</span>
+      <span class="pp-row-type">${DELIVERY_META[delivery]?.icon || ''}</span>
+    </div>`;
+  }).join('');
+
+  const countLabel = `${tests.length} ${tests.length === 1 ? t('test_s') : t('test_p')}`;
+
+  marker.bindPopup(`
+    <div class="pp-site-name" style="color:${meta.color}">${translatedSite}</div>
+    <div class="pp-site-meta"><span style="color:${meta.color}">${t('country_' + country)}</span> · ${countLabel}</div>
+    <div class="pp-list">${rows}</div>
+  `, { maxWidth: 360, maxHeight: 320 });
+
+  marker.on('mouseover', () => {
+    document.getElementById('hover-info').textContent =
+      `${siteName} · ${t('country_' + country)} · ${tests.length} ${tests.length === 1 ? t('test_s') : t('test_p')}`;
+  });
+  marker.on('mouseout', () => {
+    document.getElementById('hover-info').textContent = '';
+  });
+
+  return { marker, tests };
+});
+
+function updateMarkers() {
+  markerGroup.clearLayers();
+  let count = 0;
+  allSiteMarkers.forEach(({ marker, tests }) => {
+    const matching = tests.filter(([, country, , , year, , delivery]) =>
+      activeCountries.has(country) && activeDeliveries.has(delivery) && activeDecades.has(decade(year))
+    );
+    if (matching.length > 0) {
+      markerGroup.addLayer(marker);
+      count += matching.length;
+    }
+  });
+  document.getElementById('count-badge').textContent = count + ' ' + t('detonations');
+}
+
+// ── Country filter ────────────────────────────────────────────────────────────
+(function() {
+  const el = document.getElementById('country-filters');
+  const counts = {};
+  DETONATIONS.forEach(d => { counts[d[1]] = (counts[d[1]] || 0) + 1; });
+
+  Object.entries(COUNTRY_META).forEach(([code, meta]) => {
+    const div = document.createElement('div');
+    div.className = 'country-chip';
+    div.innerHTML = `
+      <div class="country-dot" style="background:${meta.color}"></div>
+      <span>${t('country_' + code)}</span>
+      <span class="country-cnt">${counts[code] || 0}</span>`;
+    div.addEventListener('click', () => {
+      if (activeCountries.has(code)) activeCountries.delete(code);
+      else activeCountries.add(code);
+      div.classList.toggle('off', !activeCountries.has(code));
+      updateMarkers();
+    });
+    el.appendChild(div);
+  });
+})();
+
+// ── Delivery filter ───────────────────────────────────────────────────────────
+(function() {
+  const el = document.getElementById('delivery-filters');
+  const presentTypes = new Set(DETONATIONS.map(d => d[6]));
+  Object.entries(DELIVERY_META).forEach(([key, meta]) => {
+    if (!presentTypes.has(key)) return;
+    const chip = document.createElement('span');
+    chip.className = 'delivery-chip on';
+    chip.textContent = meta.icon + ' ' + t('del_' + key);
+    chip.addEventListener('click', () => {
+      if (activeDeliveries.has(key)) activeDeliveries.delete(key);
+      else activeDeliveries.add(key);
+      chip.classList.toggle('on', activeDeliveries.has(key));
+      updateMarkers();
+    });
+    el.appendChild(chip);
+  });
+})();
+
+// ── Decade filter ─────────────────────────────────────────────────────────────
+(function() {
+  const el = document.getElementById('decade-filters');
+  const presentDecades = new Set(DETONATIONS.map(d => decade(d[4])));
+  ['1940','1950','1960','1970','1980','1990','2000','2010'].forEach(dec => {
+    if (!presentDecades.has(dec)) return;
+    const chip = document.createElement('span');
+    chip.className = 'decade-chip on';
+    chip.textContent = dec + t('dec_s');
+    chip.addEventListener('click', () => {
+      if (activeDecades.has(dec)) activeDecades.delete(dec);
+      else activeDecades.add(dec);
+      chip.classList.toggle('on', activeDecades.has(dec));
+      updateMarkers();
+    });
+    el.appendChild(chip);
+  });
+})();
+
+// ── Initial render ────────────────────────────────────────────────────────────
+updateMarkers();
+
+// ── Mobile sidebar toggle ─────────────────────────────────────────────────────
+(function() {
+  var btn = document.getElementById('sb-toggle');
+  var overlay = document.getElementById('sb-overlay');
+  var sb = document.getElementById('sidebar');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var open = sb.classList.toggle('open');
+    overlay.classList.toggle('open', open);
+    btn.textContent = open ? 'X CLOSE' : '= FILTERS';
+  });
+  overlay.addEventListener('click', function() {
+    sb.classList.remove('open');
+    overlay.classList.remove('open');
+    btn.textContent = '= FILTERS';
+  });
+})();
+</script>
+</body>
+</html>

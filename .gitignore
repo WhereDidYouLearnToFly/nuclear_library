@@ -1,0 +1,20 @@
+# Videos are archived on F:\Archive\YouTube\, never in git (GitHub limit: 100 MB/file)
+downloads/
+*.mkv
+*.mp4
+*.webm
+*.part
+*.ytdl
+
+# Runtime data written by the server
+site/counter.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Local tool settings
+.claude/settings.local.json
+Thumbs.db
+desktop.ini

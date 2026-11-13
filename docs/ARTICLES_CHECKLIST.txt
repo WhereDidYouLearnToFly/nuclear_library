@@ -1,0 +1,47 @@
+﻿ARTICLES CHECKLIST
+==================
+Russian is the master version: edit site/ru/articles/<slug>.html, then Claude
+translates it to EN / FR / UA with the same pictures.
+
+Mark a box:  [x] done   [~] in progress   [-] not needed
+(In Far: Ins switches to overtype, then just type x over the space.)
+
+ 1 Facts      reread RU against the video (link at line end), fix names,
+              places, dates, numbers — the text is AI-generated
+ 2 Text       wording, structure, title, subtitle, tags
+ 3 Pictures   images in site/assets/img/<slug>/, added to the RU article,
+              each with a caption crediting its source
+ 4 Lock       tell Claude it's done -> added to LOCKED in pipeline/import_articles.py
+ 5 Translate  Claude translates RU -> EN, FR, UA, same pictures, locks them
+ 6 Check      all 4 versions in browser: pictures, language switcher, source box
+ 7 Upload     4 article files + site/assets/img/<slug>/ + changed index.html
+
+ 1  2  3  4  5  6  7   VIDEO DATE  SLUG                         RU TITLE                                    VIDEO                         ABOUT
+---------------------  ----------  ---------------------------  ------------------------------------------  ----------------------------  --------------------
+[ ][ ][ ][ ][ ][ ][ ]  2017.04.27  uk-nuclear-tests-part-1      Тень ядерного огня                          https://youtu.be/DiOEqEa-mYQ  UK nuclear tests: Hurricane 1952, Australian test sites
+[ ][ ][ ][ ][ ][ ][ ]  2017.04.30  uk-nuclear-tests-part-2      За Гранью Граници                           https://youtu.be/yokaTiAJ5MQ  UK nuclear tests: H-bomb, Grapple tests at Christmas Island
+[ ][ ][ ][ ][ ][ ][ ]  2017.05.08  france-nuclear-tests-part-1  Гонка за ядерным паритетом                  https://youtu.be/Ano-C9Uvyls  French nuclear tests: Sahara (Algeria), Gerboise Bleue
+[ ][ ][ ][ ][ ][ ][ ]  2017.05.08  france-nuclear-tests-part-2  Цена Небесного Огня                         https://youtu.be/tFyPdyE6_Qg  French nuclear tests: Mururoa and Fangataufa, Polynesia
+[ ][ ][ ][ ][ ][ ][ ]  2017.11.05  castle-bravo                 Эпоха титанической мощи                     https://youtu.be/WtN2BpC9pe4  Castle Bravo 1954: 15 Mt US H-bomb test, Bikini fallout
+[ ][ ][ ][ ][ ][ ][ ]  2017.12.19  little-boy                   Эпоха разлома                               https://youtu.be/pb23zLZA8tU  How the Little Boy uranium gun-type bomb works
+[ ][ ][ ][ ][ ][ ][ ]  2018.01.03  fat-man                      Эволюция ярости                             https://youtu.be/N2cmOZGRIew  How the Fat Man plutonium implosion bomb works
+[ ][ ][ ][ ][ ][ ][ ]  2018.02.04  trinity-test                 Рождение новой эры                          https://youtu.be/4evKMs8__po  Trinity 1945: the first atomic bomb test
+[ ][ ][ ][ ][ ][ ][ ]  2018.03.10  operation-sandstone          Колыбель атомной эры                        https://youtu.be/yVqkgIahUmk  Operation Sandstone 1948: three US tests at Enewetak
+[ ][ ][ ][ ][ ][ ][ ]  2018.03.26  demon-core                   Цена прорыва                                https://youtu.be/e3-IGaR5e5o  Demon core: two fatal criticality accidents at Los Alamos
+[ ][ ][ ][ ][ ][ ][ ]  2018.05.11  ivy-mike                     Эпоха слияния                               https://youtu.be/H34ulMVnp0Q  Ivy Mike 1952: the first hydrogen bomb
+[ ][ ][ ][ ][ ][ ][ ]  2018.06.27  neutron-bomb                 Нейтронный удар                             https://youtu.be/LaC85dh8nJc  How the neutron bomb works
+[ ][ ][ ][ ][ ][ ][ ]  2018.12.31  mk-18-king                   От МК-6 к «Королю»                          https://youtu.be/QsBOa9ttXyw  Mk-18 'King': the biggest pure-fission bomb, Ivy King 1952
+[ ][ ][ ][ ][ ][ ][ ]  2019.01.10  cannikin                     Триумф науки и цена выживания               https://youtu.be/zK7hXJUoFO0  Cannikin 1971: largest US underground test, Amchitka
+[ ][ ][ ][ ][ ][ ][ ]  2019.02.03  wigwam                       Подводный гнев атомной мощи                 https://youtu.be/ZzMFjifsTEk  Wigwam 1955: deepest underwater nuclear test
+[ ][ ][ ][ ][ ][ ][ ]  2019.04.21  first-british-atomic-bomb    От Теории к Реальности                      https://youtu.be/bzXhWpy-uSU  How Britain built its first atomic bomb
+[ ][ ][ ][ ][ ][ ][ ]  2019.05.07  windscale-fire               Углеродный пожар и урок цивилизации         https://youtu.be/n3H9kFCC_Ls  Windscale fire 1957: UK reactor accident
+[ ][ ][ ][ ][ ][ ][ ]  2019.07.16  the-conqueror                Цена славы и радиации                       https://youtu.be/Y0fnCZLL-N4  The Conqueror: film crew exposed to fallout in Utah
+[ ][ ][ ][ ][ ][ ][ ]  2019.07.30  three-mile-island            Тихий ужас под атомом                       https://youtu.be/E__pLkt4-jA  Three Mile Island 1979: US reactor meltdown
+[ ][ ][ ][ ][ ][ ][ ]  2019.09.08  fukushima                    Эхо катастрофы                              https://youtu.be/uF39Q9QwRxI  Fukushima Daiichi 2011: tsunami and meltdowns
+[ ][ ][ ][ ][ ][ ][ ]  2019.10.12  space-nuclear-explosions     Эхо ядерной эры                             https://youtu.be/GeLsK4VAIsM  Nuclear explosions in space: Starfish Prime etc.
+[ ][ ][ ][ ][ ][ ][ ]  2019.10.24  project-gnome                Энергия Века                                https://youtu.be/Si2Z7eNn6QQ  Project Gnome 1961: peaceful nuclear explosion
+[ ][ ][ ][ ][ ][ ][ ]  2019.11.19  atomic-cannon                Эхо Ядерного Выстрела                       https://youtu.be/9cedO50-2OY  280 mm atomic cannon: Upshot-Knothole Grable 1953
+[ ][ ][ ][ ][ ][ ][ ]  2019.12.02  goiania-accident             Невидимая угроза                            https://youtu.be/ezmvtBFRefI  Goiania 1987: stolen Cs-137 medical source
+[ ][ ][ ][ ][ ][ ][ ]  2019.12.20  w88-warhead                  Элегия Секретности                          https://youtu.be/h3-niB5VHcs  W88 thermonuclear warhead design (Trident missile)
+[ ][ ][ ][ ][ ][ ][ ]  2020.02.05  sl-1-accident                Уроки Севера                                https://youtu.be/_bDIXK30TlA  SL-1 1961: fatal US military reactor accident
+[ ][ ][ ][ ][ ][ ][ ]  2020.02.21  orange-herald                От голливудского блеска до океанской тайны  https://youtu.be/Uzf5pqafXA4  Orange Herald 1957: UK's big boosted-fission bomb

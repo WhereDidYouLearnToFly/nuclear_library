@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nuclear Power Plant Map // ISOTOPEDIA</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&display=swap">
+<link rel="stylesheet" href="/assets/css/nav.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/assets/js/nav.js"></script>
+<script src="data.js"></script>
+<style>
+/* ── Variables (matches blog palette) ────────────────────────────────────── */
+:root {
+  --bg:          #080c07;
+  --surface:     #0e160c;
+  --surface2:    #162013;
+  --border:      #1e3018;
+  --green:       #4ec94e;
+  --green-bright:#7fff7f;
+  --green-dim:   #2a6b2a;
+  --green-glow:  rgba(78,201,78,0.15);
+  --amber:       #d4820a;
+  --amber-dim:   #7a4a05;
+  --amber-glow:  rgba(212,130,10,0.15);
+  --text:        #c2d4b0;
+  --text-dim:    #6a8a5a;
+  --text-bright: #e8f0d8;
+  --red:         #c0392b;
+  --scan-line:   rgba(0,0,0,0.06);
+}
+
+/* ── Reset ───────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Share Tech Mono', 'Courier New', monospace;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* CRT scanlines */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 3px, var(--scan-line) 3px, var(--scan-line) 4px);
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ── Main layout ─────────────────────────────────────────────────────────── */
+.app-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+#sidebar {
+  width: 240px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
+  z-index: 500;
+}
+.sb-section {
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.sb-section.grow { flex: 1; overflow-y: auto; min-height: 0; }
+.sb-sources { flex-shrink: 0; border-top: 1px solid var(--border); padding: 8px 12px; }
+.sources-list { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
+.sources-list a { font-size: 9px; color: var(--text-dim); text-decoration: none; transition: color .15s; letter-spacing: .3px; line-height: 1.4; }
+.sources-list a:hover { color: var(--green); }
+.sb-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--amber-dim);
+  margin-bottom: 8px;
+}
+
+/* Status toggles */
+.status-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  width: 100%;
+  text-align: left;
+  transition: all .15s;
+  margin-bottom: 2px;
+}
+.status-btn:hover { background: rgba(255,255,255,.05); }
+.status-btn.off { opacity: .3; }
+.status-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Type filter chips */
+.type-chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  font-size: 10px;
+  letter-spacing: .05em;
+  cursor: pointer;
+  margin: 2px 2px 0 0;
+  color: var(--text-dim);
+  transition: all .15s;
+}
+.type-chip.on  { border-color: var(--amber-dim); color: var(--amber); background: var(--amber-glow); }
+
+/* Country list */
+.country-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-dim);
+  transition: all .1s;
+  user-select: none;
+}
+.country-item:hover { background: rgba(255,255,255,.04); color: var(--text); }
+.country-item.off { opacity: .3; }
+.country-item .cnt { color: var(--text-dim); font-size: 10px; }
+
+/* Count badge */
+#count-badge {
+  font-size: 10px;
+  color: var(--amber-dim);
+  padding: 0 12px;
+  letter-spacing: .05em;
+}
+
+/* ── Map ──────────────────────────────────────────────────────────────────── */
+#map {
+  flex: 1;
+  background: #050908;
+  z-index: 1;
+}
+
+/* Leaflet overrides — terminal style */
+.leaflet-container { background: #050908; font-family: 'Share Tech Mono', monospace; }
+.leaflet-bar a {
+  background: var(--surface) !important;
+  color: var(--green) !important;
+  border-color: var(--border) !important;
+}
+.leaflet-bar a:hover { background: var(--surface2) !important; }
+.leaflet-control-attribution {
+  background: rgba(14,22,12,.8) !important;
+  color: var(--text-dim) !important;
+  font-size: 9px !important;
+}
+.leaflet-control-attribution a { color: var(--green-dim) !important; }
+.leaflet-popup-content-wrapper {
+  background: var(--surface) !important;
+  border: 1px solid var(--amber-dim) !important;
+  border-radius: 3px !important;
+  box-shadow: 0 0 20px rgba(212,130,10,.2) !important;
+  color: var(--text) !important;
+}
+.leaflet-popup-tip { background: var(--amber-dim) !important; }
+.leaflet-popup-close-button { color: var(--amber) !important; font-size: 16px !important; }
+
+/* ── Popup content ───────────────────────────────────────────────────────── */
+.pp-name  { font-family: 'VT323', monospace; font-size: 20px; color: var(--amber); letter-spacing: 1px; margin-bottom: 4px; }
+.pp-rows  { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 11px; margin-top: 6px; }
+.pp-k     { color: var(--text-dim); }
+.pp-v     { color: var(--text); }
+.pp-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 2px;
+  font-size: 10px;
+  letter-spacing: .05em;
+  margin-top: 6px;
+  font-weight: 600;
+}
+
+/* ── Footer status bar ───────────────────────────────────────────────────── */
+footer {
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding: 4px 16px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  font-size: 10px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  z-index: 1000;
+}
+footer span { letter-spacing: .05em; }
+#hover-info { margin-left: auto; color: var(--amber-dim); }
+.sb-toggle {
+  display: none; position: fixed; bottom: 20px; left: 20px; z-index: 600;
+  background: var(--surface); border: 1px solid var(--green-dim); color: var(--green);
+  font-family: 'Share Tech Mono', monospace; font-size: 12px; letter-spacing: 2px;
+  padding: 8px 16px; cursor: pointer; transition: all .15s;
+}
+.sb-toggle:hover { background: var(--green-glow); }
+.sb-overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.6); z-index: 499; }
+.sb-overlay.open { display: block; }
+@media (max-width: 640px) {
+  .sb-toggle { display: block; }
+  .app-body { position: relative; }
+  #sidebar { display: none; position: absolute; top: 0; left: 0; height: 100%; z-index: 500; }
+  #sidebar.open { display: flex; }
+}
+</style>
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<div class="app-body">
+  <div class="sb-overlay" id="sb-overlay"></div>
+  <button class="sb-toggle" id="sb-toggle">&#9776; FILTERS</button>
+
+  <div id="sidebar">
+    <div class="sb-section">
+      <div class="sb-title" id="t-status">STATUS</div>
+      <div id="status-filters"></div>
+    </div>
+    <div class="sb-section">
+      <div class="sb-title" id="t-type">REACTOR TYPE</div>
+      <div id="type-filters"></div>
+    </div>
+    <div class="sb-section grow">
+      <div class="sb-title" id="t-country">COUNTRY</div>
+      <div id="country-filters"></div>
+    </div>
+    <div class="sb-sources">
+      <div class="sb-title">SOURCES</div>
+      <div class="sources-list">
+        <a href="https://pris.iaea.org/pris/" target="_blank" rel="noopener">IAEA PRIS Database</a>
+        <a href="https://www.world-nuclear.org/" target="_blank" rel="noopener">World Nuclear Association</a>
+        <a href="https://en.wikipedia.org/wiki/List_of_nuclear_power_stations" target="_blank" rel="noopener">Wikipedia: Nuclear Power Stations</a>
+      </div>
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+</div>
+
+<footer>
+  <span id="count-badge">— plants</span>
+  <span id="t-click">// CLICK MARKER FOR DETAILS</span>
+  <span id="hover-info"></span>
+</footer>
+
+<script>
+// ── i18n ─────────────────────────────────────────────────────────────────────
+const LANG = new URLSearchParams(location.search).get('lang') || 'en';
+
+const TR = {
+  en: {
+    title:       'Nuclear Power Plant Map',
+    page_title:  'Nuclear Power Plant Map // ISOTOPEDIA',
+    t_status:    'STATUS',
+    t_type:      'REACTOR TYPE',
+    t_country:   'COUNTRY',
+    t_click:     '// CLICK MARKER FOR DETAILS',
+    s_operating: 'Operating',
+    s_shutdown:  'Shutdown',
+    s_construction: 'Under Construction',
+    p_name:      'Plant',
+    p_country:   'Country',
+    p_type:      'Reactor Type',
+    p_capacity:  'Capacity',
+    p_status:    'Status',
+    p_year:      'First Operation',
+    p_units:     'MWe (net)',
+    plants:      'plants shown',
+  },
+  fr: {
+    title:       'Carte des Centrales Nucléaires',
+    page_title:  'Centrales Nucléaires // ISOTOPEDIA',
+    t_status:    'STATUT',
+    t_type:      'TYPE DE RÉACTEUR',
+    t_country:   'PAYS',
+    t_click:     '// CLIQUER UN MARQUEUR POUR DÉTAILS',
+    s_operating: 'En service',
+    s_shutdown:  'Arrêtée',
+    s_construction: 'En construction',
+    p_name:      'Centrale',
+    p_country:   'Pays',
+    p_type:      'Type de réacteur',
+    p_capacity:  'Capacité',
+    p_status:    'Statut',
+    p_year:      'Première opération',
+    p_units:     'MWe (net)',
+    plants:      'centrales affichées',
+  },
+  ru: {
+    title:       'Карта атомных станций',
+    page_title:  'Атомные станции // ISOTOPEDIA',
+    t_status:    'СТАТУС',
+    t_type:      'ТИП РЕАКТОРА',
+    t_country:   'СТРАНА',
+    t_click:     '// НАЖМИТЕ МАРКЕР ДЛЯ ДЕТАЛЕЙ',
+    s_operating: 'В работе',
+    s_shutdown:  'Остановлена',
+    s_construction: 'Строится',
+    p_name:      'Станция',
+    p_country:   'Страна',
+    p_type:      'Тип реактора',
+    p_capacity:  'Мощность',
+    p_status:    'Статус',
+    p_year:      'Первый пуск',
+    p_units:     'МВт (нетто)',
+    plants:      'станций отображено',
+  },
+  ua: {
+    title:       'Карта атомних станцій',
+    page_title:  'Атомні станції // ISOTOPEDIA',
+    t_status:    'СТАТУС',
+    t_type:      'ТИП РЕАКТОРА',
+    t_country:   'КРАЇНА',
+    t_click:     '// НАТИСНІТЬ МАРКЕР ДЛЯ ДЕТАЛЕЙ',
+    s_operating: 'В роботі',
+    s_shutdown:  'Зупинена',
+    s_construction: 'Будується',
+    p_name:      'Станція',
+    p_country:   'Країна',
+    p_type:      'Тип реактора',
+    p_capacity:  'Потужність',
+    p_status:    'Статус',
+    p_year:      'Перший пуск',
+    p_units:     'МВт (нетто)',
+    plants:      'станцій відображено',
+  },
+};
+
+function t(key) { return (TR[LANG] || TR.en)[key] || TR.en[key] || key; }
+
+// ── Apply page translations ───────────────────────────────────────────────────
+(function() {
+  document.title = t('page_title');
+  document.getElementById('t-status').textContent  = t('t_status');
+  document.getElementById('t-type').textContent    = t('t_type');
+  document.getElementById('t-country').textContent = t('t_country');
+  document.getElementById('t-click').textContent   = t('t_click');
+})();
+
+// ── Status colors ─────────────────────────────────────────────────────────────
+const STATUS_META = {
+  operating:    { color: '#d4820a', label: () => t('s_operating') },
+  shutdown:     { color: '#6a8a5a', label: () => t('s_shutdown') },
+  construction: { color: '#4ec94e', label: () => t('s_construction') },
+};
+
+// ── Filter state ──────────────────────────────────────────────────────────────
+const activeStatuses  = new Set(['operating', 'shutdown', 'construction']);
+const activeTypes     = new Set(Object.keys(TYPE_NAMES));
+const activeCountries = new Set(Object.keys(COUNTRY_NAMES));
+
+// ── Map setup ─────────────────────────────────────────────────────────────────
+const map = L.map('map', {
+  center: [30, 10],
+  zoom: 2,
+  minZoom: 2,
+  maxZoom: 10,
+  zoomControl: true,
+});
+
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors',
+  maxZoom: 16,
+}).addTo(map);
+
+// ── Marker logic ──────────────────────────────────────────────────────────────
+function markerRadius(capacity) {
+  return Math.max(4, Math.min(18, Math.sqrt(capacity / 150)));
+}
+
+function makeMarker(p) {
+  const [name, country, lat, lon, type, cap, status, year] = p;
+  const meta = STATUS_META[status] || STATUS_META.operating;
+  const r = markerRadius(cap);
+
+  const marker = L.circleMarker([lat, lon], {
+    radius: r,
+    color: meta.color,
+    fillColor: meta.color,
+    fillOpacity: status === 'shutdown' ? 0.25 : 0.55,
+    weight: 1.5,
+    opacity: status === 'shutdown' ? 0.5 : 0.9,
+  });
+
+  const statusLabel = meta.label();
+  const badgeStyle = `background:${meta.color}22;color:${meta.color};border:1px solid ${meta.color}66;`;
+  const popup = `
+    <div class="pp-name">${name}</div>
+    <div class="pp-rows">
+      <span class="pp-k">${t('p_country')}</span><span class="pp-v">${COUNTRY_NAMES[country] || country}</span>
+      <span class="pp-k">${t('p_type')}</span><span class="pp-v">${type}</span>
+      <span class="pp-k">${t('p_capacity')}</span><span class="pp-v">${cap.toLocaleString()} ${t('p_units')}</span>
+      <span class="pp-k">${t('p_year')}</span><span class="pp-v">${year}</span>
+    </div>
+    <div class="pp-badge" style="${badgeStyle}">${statusLabel}</div>
+  `;
+  marker.bindPopup(popup, { maxWidth: 260 });
+
+  marker.on('mouseover', function() {
+    document.getElementById('hover-info').textContent =
+      `${name} · ${COUNTRY_NAMES[country] || country} · ${cap.toLocaleString()} MWe`;
+  });
+  marker.on('mouseout', function() {
+    document.getElementById('hover-info').textContent = '';
+  });
+
+  return marker;
+}
+
+// ── Marker layer ──────────────────────────────────────────────────────────────
+const markerGroup = L.layerGroup().addTo(map);
+const markers = [];
+
+PLANTS.forEach(p => {
+  const m = makeMarker(p);
+  markers.push({ marker: m, data: p });
+});
+
+function updateMarkers() {
+  markerGroup.clearLayers();
+  let count = 0;
+  markers.forEach(({ marker, data }) => {
+    const [, country, , , type, , status] = data;
+    if (activeStatuses.has(status) && activeTypes.has(type) && activeCountries.has(country)) {
+      markerGroup.addLayer(marker);
+      count++;
+    }
+  });
+  document.getElementById('count-badge').textContent = count + ' ' + t('plants');
+}
+
+// ── Status filter UI ──────────────────────────────────────────────────────────
+(function buildStatusFilters() {
+  const el = document.getElementById('status-filters');
+  ['operating', 'shutdown', 'construction'].forEach(s => {
+    const meta = STATUS_META[s];
+    const btn = document.createElement('button');
+    btn.className = 'status-btn';
+    btn.innerHTML = `<div class="status-dot" style="background:${meta.color}"></div><span>${meta.label()}</span>`;
+    btn.addEventListener('click', () => {
+      if (activeStatuses.has(s)) activeStatuses.delete(s);
+      else activeStatuses.add(s);
+      btn.classList.toggle('off', !activeStatuses.has(s));
+      updateMarkers();
+    });
+    el.appendChild(btn);
+  });
+})();
+
+// ── Type filter UI ────────────────────────────────────────────────────────────
+(function buildTypeFilters() {
+  const el = document.getElementById('type-filters');
+  const presentTypes = new Set(PLANTS.map(p => p[4]));
+  presentTypes.forEach(type => {
+    const chip = document.createElement('span');
+    chip.className = 'type-chip on';
+    chip.textContent = type;
+    chip.title = TYPE_NAMES[type] || type;
+    chip.addEventListener('click', () => {
+      if (activeTypes.has(type)) activeTypes.delete(type);
+      else activeTypes.add(type);
+      chip.classList.toggle('on', activeTypes.has(type));
+      updateMarkers();
+    });
+    el.appendChild(chip);
+  });
+})();
+
+// ── Country filter UI ─────────────────────────────────────────────────────────
+(function buildCountryFilters() {
+  const el = document.getElementById('country-filters');
+  const countryCounts = {};
+  PLANTS.forEach(p => { countryCounts[p[1]] = (countryCounts[p[1]] || 0) + 1; });
+
+  const sorted = Object.entries(countryCounts)
+    .sort((a, b) => b[1] - a[1]);
+
+  sorted.forEach(([code, count]) => {
+    const div = document.createElement('div');
+    div.className = 'country-item';
+    div.innerHTML = `<span>${COUNTRY_NAMES[code] || code}</span><span class="cnt">${count}</span>`;
+    div.addEventListener('click', () => {
+      if (activeCountries.has(code)) activeCountries.delete(code);
+      else activeCountries.add(code);
+      div.classList.toggle('off', !activeCountries.has(code));
+      updateMarkers();
+    });
+    el.appendChild(div);
+  });
+})();
+
+// ── Initial render ────────────────────────────────────────────────────────────
+updateMarkers();
+
+// ── Mobile sidebar toggle ─────────────────────────────────────────────────────
+(function() {
+  var btn = document.getElementById('sb-toggle');
+  var overlay = document.getElementById('sb-overlay');
+  var sb = document.getElementById('sidebar');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var open = sb.classList.toggle('open');
+    overlay.classList.toggle('open', open);
+    btn.textContent = open ? 'X CLOSE' : '= FILTERS';
+  });
+  overlay.addEventListener('click', function() {
+    sb.classList.remove('open');
+    overlay.classList.remove('open');
+    btn.textContent = '= FILTERS';
+  });
+})();
+</script>
+</body>
+</html>

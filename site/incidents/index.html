@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nuclear Incidents Map // ISOTOPEDIA</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&display=swap">
+<link rel="stylesheet" href="/assets/css/nav.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/assets/js/nav.js"></script>
+<script src="data.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #080c07;
+  --surface:   #0e160c;
+  --surface2:  #111a0f;
+  --border:    #1e3018;
+  --green:     #4ec94e;
+  --green-dim: #2a6b2a;
+  --green-glow:rgba(78,201,78,0.12);
+  --amber:     #d4820a;
+  --amber-dim: #7a4a05;
+  --amber-glow:rgba(212,130,10,0.1);
+  --text:      #c2d4b0;
+  --text-dim:  #6a8a5a;
+}
+
+html, body { height: 100%; overflow: hidden; }
+body { background: var(--bg); color: var(--text); font-family: 'Share Tech Mono', monospace; display: flex; flex-direction: column; }
+
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+.app-body  { display: flex; flex: 1; overflow: hidden; }
+#map       { flex: 1; background: #05090a; }
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+#sidebar {
+  width: 260px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.sb-section {
+  border-bottom: 1px solid var(--border);
+  padding: 10px 12px;
+}
+.sb-title {
+  font-family: 'VT323', monospace;
+  font-size: 16px;
+  color: var(--green);
+  letter-spacing: 2px;
+  margin-bottom: 8px;
+}
+.sb-stat { font-size: 11px; color: var(--text-dim); margin-bottom: 2px; }
+.sb-stat span { color: var(--green); }
+
+/* ── Filter chips ─────────────────────────────────────────────────────────── */
+.chip-group { display: flex; flex-wrap: wrap; gap: 5px; }
+.chip {
+  font-size: 10px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  cursor: pointer;
+  color: var(--text-dim);
+  background: transparent;
+  transition: all .15s;
+  font-family: 'Share Tech Mono', monospace;
+  letter-spacing: .5px;
+  white-space: nowrap;
+}
+.chip:hover { color: var(--text); border-color: var(--green-dim); }
+.chip.on { color: var(--green); border-color: var(--green); background: var(--green-glow); }
+
+/* ── INES legend ─────────────────────────────────────────────────────────── */
+.ines-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  color: var(--text-dim);
+  padding: 2px 0;
+  cursor: pointer;
+  transition: color .1s;
+}
+.ines-row:hover { color: var(--text); }
+.ines-row.on { color: var(--text); }
+.ines-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(255,255,255,0.15);
+}
+
+/* ── Country list ─────────────────────────────────────────────────────────── */
+.country-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.country-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Scrollable sections ─────────────────────────────────────────────────── */
+.sb-scroll { overflow-y: auto; flex: 1; }
+.sb-scroll::-webkit-scrollbar { width: 4px; }
+.sb-scroll::-webkit-scrollbar-track { background: transparent; }
+.sb-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+.sb-sources { flex-shrink: 0; border-top: 1px solid var(--border); padding: 8px 12px; }
+.sources-list { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
+.sources-list a { font-size: 9px; color: var(--text-dim); text-decoration: none; transition: color .15s; letter-spacing: .3px; line-height: 1.4; }
+.sources-list a:hover { color: var(--green); }
+
+/* ── Map overrides ───────────────────────────────────────────────────────── */
+.leaflet-container { background: #050908; font-family: 'Share Tech Mono', monospace; }
+.leaflet-bar a { background: var(--surface) !important; color: var(--green) !important; border-color: var(--border) !important; }
+.leaflet-bar a:hover { background: var(--surface2) !important; }
+.leaflet-control-attribution { background: rgba(14,22,12,.8) !important; color: var(--text-dim) !important; font-size: 9px !important; }
+.leaflet-control-attribution a { color: var(--green-dim) !important; }
+
+/* ── Popup ───────────────────────────────────────────────────────────────── */
+.leaflet-popup-content-wrapper { background: #0e160c !important; border: 1px solid #2a6b2a !important; border-radius: 3px !important; box-shadow: 0 0 20px rgba(78,201,78,0.2) !important; color: #c2d4b0 !important; min-width: 280px; }
+.leaflet-popup-tip { background: #2a6b2a !important; }
+.leaflet-popup-close-button { color: #4ec94e !important; font-size: 16px !important; }
+
+.pp-site-name { font-family: 'VT323', monospace; font-size: 22px; color: #4ec94e; letter-spacing: 1px; margin-bottom: 2px; }
+.pp-country   { font-size: 10px; color: #6a8a5a; margin-bottom: 6px; letter-spacing: 1px; }
+.pp-list      { max-height: 240px; overflow-y: auto; border-top: 1px solid #1e3018; }
+.pp-list::-webkit-scrollbar { width: 3px; }
+.pp-list::-webkit-scrollbar-thumb { background: #2a6b2a; }
+
+.pp-row { padding: 7px 2px; border-bottom: 1px solid #1e3018; }
+.pp-row:last-child { border-bottom: none; }
+.pp-row-name  { font-size: 12px; color: #c2d4b0; margin-bottom: 4px; }
+.pp-ines-bar  { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.pp-ines-label { font-size: 10px; color: #6a8a5a; }
+.pp-badge     { display: inline-block; padding: 1px 6px; border-radius: 2px; font-size: 9px; letter-spacing: .5px; border: 1px solid rgba(255,255,255,0.12); margin-bottom: 4px; }
+.pp-row-desc  { font-size: 10px; color: #8a9a7a; line-height: 1.5; }
+.sb-toggle {
+  display: none; position: fixed; bottom: 20px; left: 20px; z-index: 600;
+  background: #0e160c; border: 1px solid #2a6b2a; color: #4ec94e;
+  font-family: 'Share Tech Mono', monospace; font-size: 12px; letter-spacing: 2px;
+  padding: 8px 16px; cursor: pointer; transition: all .15s;
+}
+.sb-toggle:hover { background: rgba(78,201,78,0.1); }
+.sb-overlay { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.6); z-index: 499; }
+.sb-overlay.open { display: block; }
+@media (max-width: 640px) {
+  .sb-toggle { display: block; }
+  .app-body { position: relative; }
+  #sidebar { display: none; position: absolute; top: 0; left: 0; height: 100%; z-index: 500; }
+  #sidebar.open { display: flex; }
+}
+</style>
+</head>
+<body>
+
+<div id="site-header"></div>
+
+<div class="app-body">
+  <div class="sb-overlay" id="sb-overlay"></div>
+  <button class="sb-toggle" id="sb-toggle">&#9776; FILTERS</button>
+  <div id="sidebar">
+
+    <div class="sb-section">
+      <div class="sb-title" id="sb-title">NUCLEAR INCIDENTS</div>
+      <div class="sb-stat" id="sb-stat-shown">— <span id="cnt-shown">0</span> <span id="lbl-shown">incidents shown</span></div>
+      <div class="sb-stat" id="sb-stat-total">— <span id="cnt-total">0</span> <span id="lbl-total">total in database</span></div>
+    </div>
+
+    <div class="sb-scroll">
+
+      <!-- INES severity filter -->
+      <div class="sb-section">
+        <div class="sb-title" id="lbl-severity">SEVERITY (INES)</div>
+        <div id="ines-filter"></div>
+      </div>
+
+      <!-- Category filter -->
+      <div class="sb-section">
+        <div class="sb-title" id="lbl-category">CATEGORY</div>
+        <div class="chip-group" id="cat-filter"></div>
+      </div>
+
+      <!-- Decade filter -->
+      <div class="sb-section">
+        <div class="sb-title" id="lbl-decade">DECADE</div>
+        <div class="chip-group" id="dec-filter"></div>
+      </div>
+
+      <!-- Country filter -->
+      <div class="sb-section">
+        <div class="sb-title" id="lbl-country">NATION</div>
+        <div class="chip-group" id="country-filter"></div>
+      </div>
+
+    </div>
+    <div class="sb-sources">
+      <div class="sb-title">SOURCES</div>
+      <div class="sources-list">
+        <a href="https://www.iaea.org/resources/databases/ines" target="_blank" rel="noopener">IAEA INES Database</a>
+        <a href="https://www.nrc.gov/reading-rm/doc-collections/event-status/" target="_blank" rel="noopener">NRC Event Notification Reports</a>
+        <a href="https://www.iaea.org/publications/series/radiological-accident-reports" target="_blank" rel="noopener">IAEA Radiological Accident Reports</a>
+        <a href="https://en.wikipedia.org/wiki/Nuclear_and_radiation_accidents_by_country" target="_blank" rel="noopener">Wikipedia: Nuclear Accidents by Country</a>
+      </div>
+    </div>
+  </div>
+  <div id="map"></div>
+</div>
+
+<script>
+// ── i18n ─────────────────────────────────────────────────────────────────────
+const params = new URLSearchParams(location.search);
+const LANG = params.get('lang') || 'en';
+
+const TR = {
+  en: {
+    title: 'NUCLEAR INCIDENTS',
+    shown: 'incidents shown', total: 'total in database',
+    severity: 'SEVERITY (INES)', category: 'CATEGORY', decade: 'DECADE', country: 'NATION',
+    unrated: 'Unrated / Pre-INES',
+    cat_reactor:      'Reactor Accident',
+    cat_criticality:  'Criticality',
+    cat_broken_arrow: 'Broken Arrow',
+    cat_lost_source:  'Lost Source',
+    ines_labels: {
+      7: 'Level 7 — Major Accident',
+      6: 'Level 6 — Serious Accident',
+      5: 'Level 5 — Accident',
+      4: 'Level 4 — Accident',
+      3: 'Level 3 — Serious Incident',
+      2: 'Level 2 — Incident',
+      1: 'Level 1 — Anomaly',
+      0: 'Level 0 — Below Scale',
+    },
+    country_US: 'United States',    country_SU: 'USSR',
+    country_RU: 'Russia',           country_GB: 'United Kingdom',
+    country_FR: 'France',           country_JP: 'Japan',
+    country_CA: 'Canada',           country_CH: 'Switzerland',
+    country_CS: 'Czechoslovakia',   country_YU: 'Yugoslavia',
+    country_ES: 'Spain',            country_HU: 'Hungary',
+    country_SE: 'Sweden',           country_BG: 'Bulgaria',
+    country_MX: 'Mexico',           country_BR: 'Brazil',
+    country_SV: 'El Salvador',      country_EE: 'Estonia',
+    country_PE: 'Peru',             country_TH: 'Thailand',
+    country_GE: 'Georgia',          country_GL: 'Greenland',
+    country_TR: 'Turkey',           country_AZ: 'Azerbaijan',
+    country_IR: 'Iran',
+  },
+  fr: {
+    title: 'INCIDENTS NUCLÉAIRES',
+    shown: 'incidents affichés', total: 'total en base',
+    severity: 'GRAVITÉ (INES)', category: 'CATÉGORIE', decade: 'DÉCENNIE', country: 'NATION',
+    unrated: 'Non classé / Pré-INES',
+    cat_reactor:      'Accident Réacteur',
+    cat_criticality:  'Criticité',
+    cat_broken_arrow: 'Flèche Brisée',
+    cat_lost_source:  'Source Perdue',
+    ines_labels: {
+      7: 'Niveau 7 — Accident Majeur',
+      6: 'Niveau 6 — Accident Grave',
+      5: 'Niveau 5 — Accident',
+      4: 'Niveau 4 — Accident',
+      3: 'Niveau 3 — Incident Grave',
+      2: 'Niveau 2 — Incident',
+      1: 'Niveau 1 — Anomalie',
+      0: 'Niveau 0 — Hors Échelle',
+    },
+    country_US: 'États-Unis',       country_SU: 'URSS',
+    country_RU: 'Russie',           country_GB: 'Royaume-Uni',
+    country_FR: 'France',           country_JP: 'Japon',
+    country_CA: 'Canada',           country_CH: 'Suisse',
+    country_CS: 'Tchécoslovaquie',  country_YU: 'Yougoslavie',
+    country_ES: 'Espagne',          country_HU: 'Hongrie',
+    country_SE: 'Suède',            country_BG: 'Bulgarie',
+    country_MX: 'Mexique',          country_BR: 'Brésil',
+    country_SV: 'El Salvador',      country_EE: 'Estonie',
+    country_PE: 'Pérou',            country_TH: 'Thaïlande',
+    country_GE: 'Géorgie',          country_GL: 'Groenland',
+    country_TR: 'Turquie',          country_AZ: 'Azerbaïdjan',
+    country_IR: 'Iran',
+  },
+  ru: {
+    title: 'ЯДЕРНЫЕ ИНЦИДЕНТЫ',
+    shown: 'инцидентов показано', total: 'всего в базе',
+    severity: 'СЕРЬЁЗНОСТЬ (INES)', category: 'КАТЕГОРИЯ', decade: 'ДЕСЯТИЛЕТИЕ', country: 'СТРАНА',
+    unrated: 'Без рейтинга / до INES',
+    cat_reactor:      'Авария на реакторе',
+    cat_criticality:  'Критичность',
+    cat_broken_arrow: 'Сломанная стрела',
+    cat_lost_source:  'Потерянный источник',
+    ines_labels: {
+      7: 'Уровень 7 — Тяжёлая авария',
+      6: 'Уровень 6 — Серьёзная авария',
+      5: 'Уровень 5 — Авария',
+      4: 'Уровень 4 — Авария',
+      3: 'Уровень 3 — Серьёзный инцидент',
+      2: 'Уровень 2 — Инцидент',
+      1: 'Уровень 1 — Аномалия',
+      0: 'Уровень 0 — Ниже шкалы',
+    },
+    country_US: 'США',              country_SU: 'СССР',
+    country_RU: 'Россия',           country_GB: 'Великобритания',
+    country_FR: 'Франция',          country_JP: 'Япония',
+    country_CA: 'Канада',           country_CH: 'Швейцария',
+    country_CS: 'Чехословакия',     country_YU: 'Югославия',
+    country_ES: 'Испания',          country_HU: 'Венгрия',
+    country_SE: 'Швеция',           country_BG: 'Болгария',
+    country_MX: 'Мексика',          country_BR: 'Бразилия',
+    country_SV: 'Сальвадор',        country_EE: 'Эстония',
+    country_PE: 'Перу',             country_TH: 'Таиланд',
+    country_GE: 'Грузия',           country_GL: 'Гренландия',
+    country_TR: 'Турция',           country_AZ: 'Азербайджан',
+    country_IR: 'Иран',
+  },
+  ua: {
+    title: 'ЯДЕРНІ ІНЦИДЕНТИ',
+    shown: 'інцидентів показано', total: 'всього у базі',
+    severity: 'СЕРЙОЗНІСТЬ (INES)', category: 'КАТЕГОРІЯ', decade: 'ДЕСЯТИЛІТТЯ', country: 'КРАЇНА',
+    unrated: 'Без рейтингу / до INES',
+    cat_reactor:      'Аварія реактора',
+    cat_criticality:  'Критичність',
+    cat_broken_arrow: 'Зламана стріла',
+    cat_lost_source:  'Втрачене джерело',
+    ines_labels: {
+      7: 'Рівень 7 — Велика аварія',
+      6: 'Рівень 6 — Серйозна аварія',
+      5: 'Рівень 5 — Аварія',
+      4: 'Рівень 4 — Аварія',
+      3: 'Рівень 3 — Серйозний інцидент',
+      2: 'Рівень 2 — Інцидент',
+      1: 'Рівень 1 — Аномалія',
+      0: 'Рівень 0 — Нижче шкали',
+    },
+    country_US: 'США',              country_SU: 'СРСР',
+    country_RU: 'Росія',            country_GB: 'Велика Британія',
+    country_FR: 'Франція',          country_JP: 'Японія',
+    country_CA: 'Канада',           country_CH: 'Швейцарія',
+    country_CS: 'Чехословаччина',   country_YU: 'Югославія',
+    country_ES: 'Іспанія',          country_HU: 'Угорщина',
+    country_SE: 'Швеція',           country_BG: 'Болгарія',
+    country_MX: 'Мексика',          country_BR: 'Бразилія',
+    country_SV: 'Сальвадор',        country_EE: 'Естонія',
+    country_PE: 'Перу',             country_TH: 'Таїланд',
+    country_GE: 'Грузія',           country_GL: 'Гренландія',
+    country_TR: 'Туреччина',        country_AZ: 'Азербайджан',
+    country_IR: 'Іран',
+  },
+};
+
+// Site name overrides for non-English display
+const SITE_NAMES = {
+  fr: {
+    "Chernobyl NPP":          "Centrale de Tchernobyl",
+    "Fukushima Daiichi":      "Fukushima Daiichi",
+    "Mayak Plant":            "Usine de Maïak",
+    "Windscale":              "Windscale",
+    "Three Mile Island":      "Three Mile Island",
+    "Chalk River Labs":       "Laboratoires de Chalk River",
+    "Lucens":                 "Lucens",
+    "SL-1 Reactor":           "Réacteur SL-1",
+    "Fermi 1":                "Fermi 1",
+    "Saint-Laurent NPP":      "Centrale de Saint-Laurent",
+    "Bohunice NPP":           "Centrale de Bohunice",
+    "Beloyarsk NPP":          "Centrale de Beloyarsk",
+    "Leningrad NPP":          "Centrale de Leningrad",
+    "Browns Ferry NPP":       "Centrale de Browns Ferry",
+    "Vandellos NPP":          "Centrale de Vandellos",
+    "Kozloduy NPP":           "Centrale de Kozloduy",
+    "Davis-Besse":            "Davis-Besse",
+    "Paks NPP":               "Centrale de Paks",
+    "Forsmark NPP":           "Centrale de Forsmark",
+    "Chapelcross":            "Chapelcross",
+    "Los Alamos":             "Los Alamos",
+    "Vinca Institute":        "Institut Vinca",
+    "Y-12 Plant":             "Usine Y-12",
+    "Hanford Site":           "Site de Hanford",
+    "Wood River Junction":    "Wood River Junction",
+    "Sarov (Arzamas-16)":     "Sarov (Arzamas-16)",
+    "JCO Tokaimura":          "JCO Tokaimura",
+    "ICPP Idaho":             "ICPP Idaho",
+    "Palomares":              "Palomares",
+    "Goiania":                "Goiânia",
+    "Algeciras":              "Algésiras",
+  },
+  ru: {
+    "Chernobyl NPP":          "Чернобыльская АЭС",
+    "Fukushima Daiichi":      "Фукусима Дайити",
+    "Mayak Plant":            "Завод «Маяк»",
+    "Windscale":              "Уиндскейл",
+    "Three Mile Island":      "Три-Майл-Айленд",
+    "Chalk River Labs":       "Лаборатории Чок-Ривер",
+    "Lucens":                 "Люсенс",
+    "SL-1 Reactor":           "Реактор SL-1",
+    "Fermi 1":                "Ферми-1",
+    "Saint-Laurent NPP":      "АЭС Сен-Лоран",
+    "Bohunice NPP":           "АЭС Богунице",
+    "Beloyarsk NPP":          "Белоярская АЭС",
+    "Leningrad NPP":          "Ленинградская АЭС",
+    "Browns Ferry NPP":       "АЭС Браунс-Ферри",
+    "Vandellos NPP":          "АЭС Ванделлос",
+    "Kozloduy NPP":           "АЭС Козлодуй",
+    "Davis-Besse":            "Дейвис-Бесс",
+    "Paks NPP":               "АЭС Пакш",
+    "Forsmark NPP":           "АЭС Форсмарк",
+    "Chapelcross":            "Чейпелкросс",
+    "Los Alamos":             "Лос-Аламос",
+    "Vinca Institute":        "Институт Винча",
+    "Y-12 Plant":             "Завод Y-12",
+    "Hanford Site":           "Хэнфордский комплекс",
+    "Wood River Junction":    "Вуд-Ривер-Джанкшн",
+    "Sarov (Arzamas-16)":     "Саров (Арзамас-16)",
+    "JCO Tokaimura":          "ЯКО Токаймура",
+    "ICPP Idaho":             "ICPP Айдахо",
+    "Palomares":              "Паломарес",
+    "Goiania":                "Гояния",
+    "Algeciras":              "Альхесирас",
+    "Kramatorsk":             "Краматорск",
+    "Lilo Georgia":           "Лило, Грузия",
+    "Lia Georgia":            "Лиа, Грузия",
+    "Tammiku Estonia":        "Таммику, Эстония",
+    "Istanbul":               "Стамбул",
+    "Baku Azerbaijan":        "Баку",
+    "Gilan Iran":             "Гилян, Иран",
+    "Ciudad Juarez":          "Сьюдад-Хуарес",
+    "San Salvador":           "Сан-Сальвадор",
+    "Samut Prakan":           "Самутпракан",
+    "Yanango Peru":           "Яnanго, Перу",
+  },
+  ua: {
+    "Chernobyl NPP":          "Чорнобильська АЕС",
+    "Fukushima Daiichi":      "Фукусіма Дайіті",
+    "Mayak Plant":            "Завод «Маяк»",
+    "Windscale":              "Уіндскейл",
+    "Three Mile Island":      "Три-Майл-Айленд",
+    "Chalk River Labs":       "Лабораторії Чок-Рівер",
+    "Lucens":                 "Люсенс",
+    "SL-1 Reactor":           "Реактор SL-1",
+    "Fermi 1":                "Фермі-1",
+    "Saint-Laurent NPP":      "АЕС Сен-Лоран",
+    "Bohunice NPP":           "АЕС Богуніце",
+    "Beloyarsk NPP":          "Белоярська АЕС",
+    "Leningrad NPP":          "Ленінградська АЕС",
+    "Browns Ferry NPP":       "АЕС Браунс-Фері",
+    "Vandellos NPP":          "АЕС Ванделлос",
+    "Kozloduy NPP":           "АЕС Козлодуй",
+    "Davis-Besse":            "Девіс-Бесс",
+    "Paks NPP":               "АЕС Пакш",
+    "Forsmark NPP":           "АЕС Форсмарк",
+    "Chapelcross":            "Чейпелкрос",
+    "Los Alamos":             "Лос-Аламос",
+    "Vinca Institute":        "Інститут Вінча",
+    "Y-12 Plant":             "Завод Y-12",
+    "Hanford Site":           "Хенфордський комплекс",
+    "Wood River Junction":    "Вуд-Рівер-Джанкшн",
+    "Sarov (Arzamas-16)":     "Саров (Арзамас-16)",
+    "JCO Tokaimura":          "ЯКО Токаймура",
+    "ICPP Idaho":             "ICPP Айдахо",
+    "Palomares":              "Паломарес",
+    "Goiania":                "Гоянія",
+    "Algeciras":              "Альхесірас",
+    "Kramatorsk":             "Краматорськ",
+    "Lilo Georgia":           "Ліло, Грузія",
+    "Lia Georgia":            "Ліа, Грузія",
+    "Tammiku Estonia":        "Таммику, Естонія",
+    "Istanbul":               "Стамбул",
+    "Baku Azerbaijan":        "Баку",
+    "Gilan Iran":             "Гілян, Іран",
+    "Ciudad Juarez":          "Сьюдад-Хуарес",
+    "San Salvador":           "Сан-Сальвадор",
+    "Samut Prakan":           "Самутпракан",
+    "Yanango Peru":           "Яnanго, Перу",
+  },
+};
+
+function t(k) { return (TR[LANG] || TR.en)[k] || TR.en[k] || k; }
+
+// ── Filter state ─────────────────────────────────────────────────────────────
+const allInes = [7, 6, 5, 4, 3, 2, 1, 0, null];
+let activeInes      = new Set(allInes.map(String));
+let activeCats      = new Set(Object.keys(CATEGORY_META));
+let activeDecs      = new Set();
+let activeCountries = new Set();
+
+// ── Map init ─────────────────────────────────────────────────────────────────
+const map = L.map('map', { center: [25, 10], zoom: 2, minZoom: 2, maxZoom: 10 });
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Esri, HERE, Garmin, &copy; OpenStreetMap contributors',
+  maxZoom: 16,
+}).addTo(map);
+
+// ── Group INCIDENTS by site ───────────────────────────────────────────────────
+const siteGroups = {};
+INCIDENTS.forEach(d => {
+  const site = d[8];
+  siteGroups[site] ??= [];
+  siteGroups[site].push(d);
+});
+
+function inesColor(ines) {
+  if (ines === null || ines === undefined) return INES_UNRATED_COLOR;
+  return INES_META[ines] || INES_UNRATED_COLOR;
+}
+
+function markerRadius(ines) {
+  if (ines === null || ines === undefined) return 8;
+  return 5 + ines * 2.5;
+}
+
+// ── Build markers ─────────────────────────────────────────────────────────────
+const siteMarkers = {};
+Object.entries(siteGroups).forEach(([siteName, incidents]) => {
+  const [,, lat, lon] = incidents[0];
+  const maxInes = incidents.reduce((m, d) => {
+    if (d[5] === null) return m;
+    return (m === null || d[5] > m) ? d[5] : m;
+  }, null);
+  const color  = inesColor(maxInes);
+  const radius = markerRadius(maxInes);
+
+  const marker = L.circleMarker([lat, lon], {
+    radius,
+    fillColor: color,
+    color: 'rgba(0,0,0,0.4)',
+    weight: 1,
+    fillOpacity: 0.85,
+  });
+
+  const translatedSite = (SITE_NAMES[LANG] || {})[siteName] || siteName;
+
+  const countryCode = incidents[0][1];
+  const countryName = t('country_' + countryCode);
+
+  const rows = incidents.map(([name, , , , year, ines, category, notable]) => {
+    const iColor = inesColor(ines);
+    const iLabel = ines !== null
+      ? ((TR[LANG] || TR.en).ines_labels[ines] || 'INES ' + ines)
+      : t('unrated');
+    const catLabel = t('cat_' + category);
+    return `<div class="pp-row">
+      <div class="pp-row-name">${name} (${year})</div>
+      <div class="pp-ines-bar">
+        <div class="ines-dot" style="background:${iColor}"></div>
+        <span class="pp-ines-label">${iLabel}</span>
+      </div>
+      <span class="pp-badge" style="color:${iColor};border-color:${iColor}40">${catLabel}</span>
+      <div class="pp-row-desc">${notable}</div>
+    </div>`;
+  }).join('');
+
+  marker.bindPopup(`
+    <div class="pp-site-name">${translatedSite}</div>
+    <div class="pp-country">${countryName}</div>
+    <div class="pp-list">${rows}</div>
+  `, { maxWidth: 360, autoPan: true });
+
+  siteMarkers[siteName] = { marker, incidents };
+});
+
+// ── Derive filter options from data ──────────────────────────────────────────
+const decades    = [...new Set(INCIDENTS.map(d => Math.floor(d[4] / 10) * 10))].sort((a,b)=>a-b);
+const countries  = [...new Set(INCIDENTS.map(d => d[1]))].sort();
+
+// Init active filters to ALL
+decades.forEach(d => activeDecs.add(d));
+countries.forEach(c => activeCountries.add(c));
+
+// ── Build sidebar filters ─────────────────────────────────────────────────────
+// Update localized labels
+document.getElementById('sb-title').textContent = t('title');
+document.getElementById('lbl-shown').textContent = t('shown');
+document.getElementById('lbl-total').textContent = t('total');
+document.getElementById('lbl-severity').textContent = t('severity');
+document.getElementById('lbl-category').textContent = t('category');
+document.getElementById('lbl-decade').textContent = t('decade');
+document.getElementById('lbl-country').textContent = t('country');
+
+// INES filter
+const inesFilter = document.getElementById('ines-filter');
+[7,6,5,4,3,2,1,0,null].forEach(ines => {
+  const color = inesColor(ines);
+  const label = ines !== null ? ((TR[LANG]||TR.en).ines_labels[ines] || 'INES '+ines) : t('unrated');
+  const key   = String(ines);
+  const row   = document.createElement('div');
+  row.className = 'ines-row on';
+  row.dataset.key = key;
+  row.innerHTML = `<div class="ines-dot" style="background:${color}"></div><span>${label}</span>`;
+  row.addEventListener('click', () => {
+    if (activeInes.has(key)) { activeInes.delete(key); row.classList.remove('on'); }
+    else                      { activeInes.add(key);    row.classList.add('on'); }
+    updateMarkers();
+  });
+  inesFilter.appendChild(row);
+});
+
+// Category chips
+const catFilter = document.getElementById('cat-filter');
+Object.keys(CATEGORY_META).forEach(cat => {
+  const chip = document.createElement('div');
+  chip.className = 'chip on';
+  chip.dataset.key = cat;
+  chip.textContent = t('cat_' + cat);
+  chip.addEventListener('click', () => {
+    if (activeCats.has(cat)) { activeCats.delete(cat); chip.classList.remove('on'); }
+    else                      { activeCats.add(cat);    chip.classList.add('on'); }
+    updateMarkers();
+  });
+  catFilter.appendChild(chip);
+});
+
+// Decade chips
+const decFilter = document.getElementById('dec-filter');
+decades.forEach(dec => {
+  const chip = document.createElement('div');
+  chip.className = 'chip on';
+  chip.dataset.key = dec;
+  chip.textContent = dec + 's';
+  chip.addEventListener('click', () => {
+    if (activeDecs.has(dec)) { activeDecs.delete(dec); chip.classList.remove('on'); }
+    else                      { activeDecs.add(dec);    chip.classList.add('on'); }
+    updateMarkers();
+  });
+  decFilter.appendChild(chip);
+});
+
+// Country chips
+const countryFilter = document.getElementById('country-filter');
+const counts = {};
+INCIDENTS.forEach(d => { counts[d[1]] = (counts[d[1]]||0) + 1; });
+countries.forEach(code => {
+  const meta  = COUNTRY_META[code] || { color: '#888' };
+  const chip  = document.createElement('div');
+  chip.className = 'chip on country-chip';
+  chip.dataset.key = code;
+  chip.innerHTML = `<div class="country-dot" style="background:${meta.color}"></div>${t('country_'+code)} (${counts[code]||0})`;
+  chip.addEventListener('click', () => {
+    if (activeCountries.has(code)) { activeCountries.delete(code); chip.classList.remove('on'); }
+    else                            { activeCountries.add(code);    chip.classList.add('on'); }
+    updateMarkers();
+  });
+  countryFilter.appendChild(chip);
+});
+
+// ── Update markers ────────────────────────────────────────────────────────────
+function updateMarkers() {
+  let shown = 0;
+  Object.entries(siteMarkers).forEach(([siteName, { marker, incidents }]) => {
+    const matching = incidents.filter(d => {
+      const dec = Math.floor(d[4] / 10) * 10;
+      return activeInes.has(String(d[5]))
+          && activeCats.has(d[6])
+          && activeDecs.has(dec)
+          && activeCountries.has(d[1]);
+    });
+    if (matching.length > 0) {
+      if (!map.hasLayer(marker)) marker.addTo(map);
+      shown += matching.length;
+    } else {
+      if (map.hasLayer(marker)) map.removeLayer(marker);
+    }
+  });
+  document.getElementById('cnt-shown').textContent = shown;
+  document.getElementById('cnt-total').textContent = INCIDENTS.length;
+}
+
+updateMarkers();
+
+// ── Mobile sidebar toggle ─────────────────────────────────────────────────────
+(function() {
+  var btn = document.getElementById('sb-toggle');
+  var overlay = document.getElementById('sb-overlay');
+  var sb = document.getElementById('sidebar');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var open = sb.classList.toggle('open');
+    overlay.classList.toggle('open', open);
+    btn.textContent = open ? 'X CLOSE' : '= FILTERS';
+  });
+  overlay.addEventListener('click', function() {
+    sb.classList.remove('open');
+    overlay.classList.remove('open');
+    btn.textContent = '= FILTERS';
+  });
+})();
+</script>
+</body>
+</html>

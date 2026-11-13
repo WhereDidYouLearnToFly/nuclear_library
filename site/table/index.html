@@ -1,0 +1,1099 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interactive Chart of Nuclides</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=VT323&family=Share+Tech+Mono&display=swap">
+<link rel="stylesheet" href="/assets/css/nav.css">
+<script src="/assets/js/nav.js"></script>
+<script src="data.js"></script>
+<script src="element-names.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --border: #30363d;
+  --text: #e6edf3;
+  --muted: #7d8590;
+  --accent: #58a6ff;
+}
+body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 13px; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+/* ── Chart topbar (title + isotope count) ───────────────────────────────── */
+.table-topbar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 6px 16px; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.table-topbar h1 { font-size: 14px; font-weight: 600; color: var(--accent); flex: 1; }
+.count-badge { background: var(--border); color: var(--muted); border-radius: 12px; padding: 2px 8px; font-size: 11px; white-space: nowrap; }
+
+/* Main layout */
+main { display: flex; flex: 1; overflow: hidden; }
+
+/* Sidebar */
+#sidebar { width: 220px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; }
+.sidebar-section { padding: 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.sidebar-section.grow { flex: 1; display: flex; flex-direction: column; min-height: 0; flex-shrink: 1; }
+.sidebar-section h3 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 8px; }
+.legend-item { display: flex; align-items: center; gap: 8px; padding: 2px 0; cursor: pointer; border-radius: 4px; padding: 3px 4px; }
+.legend-item:hover { background: rgba(255,255,255,.05); }
+.legend-item.inactive { opacity: .35; }
+.legend-color { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+.legend-label { font-size: 12px; }
+.legend-count { margin-left: auto; font-size: 11px; color: var(--muted); }
+
+/* Canvas area */
+#chart-wrap { flex: 1; position: relative; overflow: hidden; background: #090d13; cursor: crosshair; }
+#chart { display: block; }
+
+/* Tooltip */
+#tooltip { position: fixed; background: rgba(13,17,23,.95); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; pointer-events: none; display: none; z-index: 100; min-width: 160px; box-shadow: 0 8px 24px rgba(0,0,0,.6); }
+#tooltip .tt-symbol { font-size: 20px; font-weight: 700; }
+#tooltip .tt-name { color: var(--muted); font-size: 12px; margin-top: 1px; }
+#tooltip .tt-rows { margin-top: 8px; display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; font-size: 12px; }
+#tooltip .tt-k { color: var(--muted); }
+#tooltip .tt-v { color: var(--text); font-weight: 500; }
+
+/* Info panel */
+#info-panel { width: 240px; background: var(--surface); border-left: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
+#info-panel .panel-header { padding: 12px 16px; border-bottom: 1px solid var(--border); }
+#info-panel .panel-header h2 { font-size: 13px; font-weight: 600; color: var(--muted); }
+#info-content { padding: 16px; flex: 1; overflow-y: auto; }
+#info-content.empty p { color: var(--muted); font-size: 12px; text-align: center; margin-top: 24px; line-height: 1.6; }
+.info-symbol-big { font-size: 56px; font-weight: 800; line-height: 1; color: var(--text); }
+.info-nuclide-name { font-size: 13px; color: var(--muted); margin-top: 4px; margin-bottom: 16px; }
+.info-row { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.04); font-size: 12px; }
+.info-row:last-child { border-bottom: none; }
+.info-row .ik { color: var(--muted); }
+.info-row .iv { color: var(--text); font-weight: 500; text-align: right; }
+.decay-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin-top: 8px; }
+
+/* Status bar */
+footer { background: var(--surface); border-top: 1px solid var(--border); padding: 4px 16px; display: flex; gap: 16px; align-items: center; font-size: 11px; color: var(--muted); flex-shrink: 0; }
+footer span { display: flex; align-items: center; gap: 4px; }
+footer kbd { background: var(--border); border-radius: 3px; padding: 1px 5px; font-size: 10px; font-family: inherit; }
+
+/* Element list (persistent + filterable) */
+#elem-list { flex:1; overflow-y:auto; border:1px solid var(--border); border-radius:6px; min-height:0; margin-bottom:4px; }
+#elem-list .el-item { padding:5px 10px; cursor:pointer; font-size:12px; display:flex; align-items:center; gap:8px; border-bottom:1px solid rgba(255,255,255,.04); }
+#elem-list .el-item:last-child { border-bottom:none; }
+#elem-list .el-item:hover, #elem-list .el-item.el-active { background:rgba(88,166,255,.18); }
+.dd-sym { font-weight:700; color:var(--accent); min-width:26px; }
+.dd-z   { margin-left:auto; color:var(--muted); font-size:11px; }
+
+/* Language switcher */
+#lang-switcher a {
+  color: #7d8590;
+  text-decoration: none;
+  font-size: 11px;
+  border: 1px solid #30363d;
+  padding: 2px 7px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all .15s;
+}
+#lang-switcher a:hover { color: #58a6ff; border-color: #58a6ff; }
+#lang-switcher a.active { color: #58a6ff; border-color: #58a6ff; background: rgba(88,166,255,.12); }
+
+/* Zoom buttons */
+.zoom-btns { position: absolute; bottom: 28px; right: 8px; display: flex; flex-direction: column; gap: 4px; }
+.zoom-btns button { background: var(--surface); border: 1px solid var(--border); color: var(--text); width: 28px; height: 28px; border-radius: 6px; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; }
+.zoom-btns button:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ── Mobile ───────────────────────────────────────────────────────────────── */
+.sb-toggle {
+  display: none; position: fixed; bottom: 20px; left: 20px; z-index: 700;
+  background: var(--surface); border: 1px solid var(--accent); color: var(--accent);
+  font-family: 'Share Tech Mono', monospace; font-size: 12px; letter-spacing: 2px;
+  padding: 8px 16px; cursor: pointer;
+}
+.sb-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 499; }
+.sb-overlay.open { display: block; }
+@media (max-width: 640px) {
+  body { height: 100dvh; }
+  .sb-toggle { display: block; }
+  #sidebar   { display: none !important; }
+  #info-panel { display: none !important; }
+  #sidebar.open {
+    display: flex !important;
+    position: fixed; top: 0; left: 0; height: 100%; z-index: 500; overflow-y: auto;
+  }
+  #info-panel.active {
+    display: flex !important;
+    position: fixed; bottom: 0; left: 0; right: 0;
+    width: 100%; max-height: 50vh;
+    border-left: none; border-top: 1px solid var(--border);
+    z-index: 600; flex-direction: column;
+  }
+}
+</style>
+</head>
+<body>
+
+<div id="site-header"></div>
+<div class="table-topbar">
+  <h1 id="table-title">⚛ Chart of Nuclides</h1>
+  <span class="count-badge" id="count-badge">— isotopes</span>
+</div>
+
+<main>
+  <div class="sb-overlay" id="sb-overlay"></div>
+  <button class="sb-toggle" id="sb-toggle">&#9776; LEGEND</button>
+  <div id="sidebar">
+    <div class="sidebar-section">
+      <h3>Decay Mode</h3>
+      <div id="legend"></div>
+    </div>
+    <div class="sidebar-section grow">
+      <h3>Go to element</h3>
+      <input id="elem-search" type="text" autocomplete="off" spellcheck="false"
+             placeholder="Name or symbol…"
+             style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:5px 8px;font-size:12px;outline:none;box-sizing:border-box;margin-bottom:6px">
+      <div id="elem-list"></div>
+    </div>
+  </div>
+
+  <div id="chart-wrap">
+    <canvas id="chart"></canvas>
+    <div id="tooltip">
+      <div class="tt-symbol" id="tt-sym"></div>
+      <div class="tt-name" id="tt-name"></div>
+      <div class="tt-rows" id="tt-rows"></div>
+    </div>
+    <div class="zoom-btns">
+      <button id="zoom-in" title="Zoom in">+</button>
+      <button id="zoom-reset" title="Reset zoom" style="font-size:11px">⊙</button>
+      <button id="zoom-out" title="Zoom out">−</button>
+    </div>
+  </div>
+
+  <div id="info-panel">
+    <div class="panel-header"><h2>Isotope Details</h2></div>
+    <div id="info-content" class="empty">
+      <p>Click any nuclide on the chart to see its details.</p>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <span>🖱 Drag to pan</span>
+  <span>Scroll to zoom</span>
+  <span><kbd>R</kbd> reset view</span>
+  <span><kbd>Esc</kbd> deselect</span>
+  <span id="hover-status" style="margin-left:auto"></span>
+</footer>
+
+<script>
+// ── i18n ────────────────────────────────────────────────────────────────────
+const LANG = new URLSearchParams(location.search).get('lang') || 'en';
+
+const TR = {
+  en: {
+    title:        'Interactive Chart of Nuclides',
+    h1:           '⚛ Chart of Nuclides',
+    isotopes:     'isotopes',
+    decay_mode:   'Decay Mode',
+    go_to_elem:   'Go to element',
+    placeholder:  'Name or symbol…',
+    iso_details:  'Isotope Details',
+    click_hint:   'Click any nuclide on the chart to see its details.',
+    drag:         '🖱 Drag to pan',
+    scroll:       'Scroll to zoom',
+    reset_hint:   'reset view',
+    deselect:     'deselect',
+    zoom_in:      'Zoom in',
+    zoom_reset:   'Reset zoom',
+    zoom_out:     'Zoom out',
+    hl_stable:    'stable',
+    ax_protons:   'Z (protons)',
+    ax_neutrons:  'N (neutrons)',
+    tt_decay:     'Decay',
+    tt_halflife:  'Half-life',
+    tt_abundance: 'Abundance',
+    ik_z:         'Proton number (Z)',
+    ik_n:         'Neutron number (N)',
+    ik_a:         'Mass number (A)',
+    ik_elem:      'Element',
+    ik_sym:       'Symbol',
+    ik_hl:        'Half-life',
+    ik_dm:        'Decay mode',
+    ik_ab:        'Natural abundance',
+    ik_nz:        'N/Z ratio',
+    applications: 'Applications',
+    dm_stable:    'Stable',
+    dm_Bm:        'Beta⁻',
+    dm_Bp:        'Beta⁺',
+    dm_EC:        'Electron Capture',
+    dm_BpEC:      'Beta⁺ / EC',
+    dm_A:         'Alpha',
+    dm_SF:        'Spontan. Fission',
+    dm_P:         'Proton Emission',
+    dm_n:         'Neutron Emission',
+    dm_2Bm:       'Double Beta⁻',
+    cat_medical:  'Medical',
+    cat_power:    'Power Plant',
+    cat_weapons:  'Weapons',
+    cat_space:    'Space',
+    cat_industry: 'Industrial',
+    cat_research: 'Research',
+    cat_dating:   'Dating',
+    cat_hazard:   'Hazardous',
+  },
+  fr: {
+    title:        'Table des Nucléides Interactive',
+    h1:           '⚛ Table des Nucléides',
+    isotopes:     'isotopes',
+    decay_mode:   'Mode de Désintégration',
+    go_to_elem:   'Aller à l\'élément',
+    placeholder:  'Nom ou symbole…',
+    iso_details:  'Détails de l\'Isotope',
+    click_hint:   'Cliquez sur un nucléide pour voir ses détails.',
+    drag:         '🖱 Glisser pour déplacer',
+    scroll:       'Molette pour zoomer',
+    reset_hint:   'réinitialiser',
+    deselect:     'désélectionner',
+    zoom_in:      'Zoom avant',
+    zoom_reset:   'Réinitialiser le zoom',
+    zoom_out:     'Zoom arrière',
+    hl_stable:    'stable',
+    ax_protons:   'Z (protons)',
+    ax_neutrons:  'N (neutrons)',
+    tt_decay:     'Désintégration',
+    tt_halflife:  'Demi-vie',
+    tt_abundance: 'Abondance',
+    ik_z:         'Numéro de proton (Z)',
+    ik_n:         'Numéro de neutron (N)',
+    ik_a:         'Nombre de masse (A)',
+    ik_elem:      'Élément',
+    ik_sym:       'Symbole',
+    ik_hl:        'Demi-vie',
+    ik_dm:        'Mode de désintégration',
+    ik_ab:        'Abondance naturelle',
+    ik_nz:        'Rapport N/Z',
+    applications: 'Applications',
+    dm_stable:    'Stable',
+    dm_Bm:        'Bêta⁻',
+    dm_Bp:        'Bêta⁺',
+    dm_EC:        'Capture Électronique',
+    dm_BpEC:      'Bêta⁺ / CE',
+    dm_A:         'Alpha',
+    dm_SF:        'Fission Spontanée',
+    dm_P:         'Émission de Proton',
+    dm_n:         'Émission de Neutron',
+    dm_2Bm:       'Double Bêta⁻',
+    cat_medical:  'Médical',
+    cat_power:    'Centrale nucléaire',
+    cat_weapons:  'Armement',
+    cat_space:    'Espace',
+    cat_industry: 'Industriel',
+    cat_research: 'Recherche',
+    cat_dating:   'Datation',
+    cat_hazard:   'Dangereux',
+  },
+  ru: {
+    title:        'Интерактивная Таблица Нуклидов',
+    h1:           '⚛ Таблица Нуклидов',
+    isotopes:     'нуклидов',
+    decay_mode:   'Режим Распада',
+    go_to_elem:   'Перейти к элементу',
+    placeholder:  'Название или символ…',
+    iso_details:  'Детали Изотопа',
+    click_hint:   'Нажмите на нуклид, чтобы увидеть детали.',
+    drag:         '🖱 Перетащить для перемещения',
+    scroll:       'Колёсико для масштабирования',
+    reset_hint:   'сбросить вид',
+    deselect:     'снять выделение',
+    zoom_in:      'Увеличить',
+    zoom_reset:   'Сбросить масштаб',
+    zoom_out:     'Уменьшить',
+    hl_stable:    'стабильный',
+    ax_protons:   'Z (протоны)',
+    ax_neutrons:  'N (нейтроны)',
+    tt_decay:     'Распад',
+    tt_halflife:  'Период полураспада',
+    tt_abundance: 'Распространённость',
+    ik_z:         'Число протонов (Z)',
+    ik_n:         'Число нейтронов (N)',
+    ik_a:         'Массовое число (A)',
+    ik_elem:      'Элемент',
+    ik_sym:       'Символ',
+    ik_hl:        'Период полураспада',
+    ik_dm:        'Режим распада',
+    ik_ab:        'Природная распространённость',
+    ik_nz:        'Отношение N/Z',
+    applications: 'Применение',
+    dm_stable:    'Стабильный',
+    dm_Bm:        'Бета⁻',
+    dm_Bp:        'Бета⁺',
+    dm_EC:        'Электронный захват',
+    dm_BpEC:      'Бета⁺ / ЭЗ',
+    dm_A:         'Альфа',
+    dm_SF:        'Спонт. деление',
+    dm_P:         'Эмиссия протона',
+    dm_n:         'Эмиссия нейтрона',
+    dm_2Bm:       'Двойной Бета⁻',
+    cat_medical:  'Медицина',
+    cat_power:    'Электростанция',
+    cat_weapons:  'Оружие',
+    cat_space:    'Космос',
+    cat_industry: 'Промышленность',
+    cat_research: 'Наука',
+    cat_dating:   'Датирование',
+    cat_hazard:   'Опасный',
+  },
+  ua: {
+    title:        'Інтерактивна Таблиця Нуклідів',
+    h1:           '⚛ Таблиця Нуклідів',
+    isotopes:     'нуклідів',
+    decay_mode:   'Режим Розпаду',
+    go_to_elem:   'Перейти до елементу',
+    placeholder:  'Назва або символ…',
+    iso_details:  'Деталі Ізотопу',
+    click_hint:   'Натисніть на нуклід, щоб побачити деталі.',
+    drag:         '🖱 Перетягнути для переміщення',
+    scroll:       'Коліщатко для масштабування',
+    reset_hint:   'скинути вигляд',
+    deselect:     'зняти виділення',
+    zoom_in:      'Збільшити',
+    zoom_reset:   'Скинути масштаб',
+    zoom_out:     'Зменшити',
+    hl_stable:    'стабільний',
+    ax_protons:   'Z (протони)',
+    ax_neutrons:  'N (нейтрони)',
+    tt_decay:     'Розпад',
+    tt_halflife:  'Період піврозпаду',
+    tt_abundance: 'Поширеність',
+    ik_z:         'Число протонів (Z)',
+    ik_n:         'Число нейтронів (N)',
+    ik_a:         'Масове число (A)',
+    ik_elem:      'Елемент',
+    ik_sym:       'Символ',
+    ik_hl:        'Період піврозпаду',
+    ik_dm:        'Режим розпаду',
+    ik_ab:        'Природна поширеність',
+    ik_nz:        'Відношення N/Z',
+    applications: 'Застосування',
+    dm_stable:    'Стабільний',
+    dm_Bm:        'Бета⁻',
+    dm_Bp:        'Бета⁺',
+    dm_EC:        'Електронний захват',
+    dm_BpEC:      'Бета⁺ / ЕЗ',
+    dm_A:         'Альфа',
+    dm_SF:        'Спонт. поділ',
+    dm_P:         'Емісія протона',
+    dm_n:         'Емісія нейтрона',
+    dm_2Bm:       'Подвійний Бета⁻',
+    cat_medical:  'Медицина',
+    cat_power:    'Електростанція',
+    cat_weapons:  'Зброя',
+    cat_space:    'Космос',
+    cat_industry: 'Промисловість',
+    cat_research: 'Наука',
+    cat_dating:   'Датування',
+    cat_hazard:   'Небезпечний',
+  },
+};
+
+function t(key) { return (TR[LANG] || TR.en)[key] || TR.en[key] || key; }
+
+function applyTranslations() {
+  document.title = t('title');
+  document.getElementById('table-title').textContent = t('h1');
+  document.querySelector('#sidebar .sidebar-section:first-child h3').textContent = t('decay_mode');
+  document.querySelector('#sidebar .sidebar-section.grow h3').textContent = t('go_to_elem');
+  document.getElementById('elem-search').placeholder = t('placeholder');
+  document.querySelector('#info-panel .panel-header h2').textContent = t('iso_details');
+  document.querySelector('#info-content p').textContent = t('click_hint');
+  document.querySelectorAll('footer span')[0].textContent = t('drag');
+  document.querySelectorAll('footer span')[1].textContent = t('scroll');
+  document.querySelectorAll('footer span')[2].innerHTML = `<kbd>R</kbd> ${t('reset_hint')}`;
+  document.querySelectorAll('footer span')[3].innerHTML = `<kbd>Esc</kbd> ${t('deselect')}`;
+  document.getElementById('zoom-in').title  = t('zoom_in');
+  document.getElementById('zoom-reset').title = t('zoom_reset');
+  document.getElementById('zoom-out').title = t('zoom_out');
+}
+
+// ── Usage category palette ───────────────────────────────────────────────────
+const CAT_META = {
+  'medical':    { label: () => t('cat_medical'),  icon: '⚕',  bg: '#0c4a6e', text: '#7dd3fc' },
+  'power':      { label: () => t('cat_power'),    icon: '⚡', bg: '#713f12', text: '#fef08a' },
+  'weapons':    { label: () => t('cat_weapons'),  icon: '💣', bg: '#7f1d1d', text: '#fca5a5' },
+  'space':      { label: () => t('cat_space'),    icon: '🚀', bg: '#2e1065', text: '#d8b4fe' },
+  'industrial': { label: () => t('cat_industry'), icon: '🏭', bg: '#1c1917', text: '#a8a29e' },
+  'research':   { label: () => t('cat_research'), icon: '🔬', bg: '#052e16', text: '#86efac' },
+  'dating':     { label: () => t('cat_dating'),   icon: '⏱',  bg: '#431407', text: '#fed7aa' },
+  'hazardous':  { label: () => t('cat_hazard'),   icon: '☢',  bg: '#3b0764', text: '#f0abfc' },
+};
+
+// ── Decay mode palette ──────────────────────────────────────────────────────
+const DECAY_META = {
+  'stable': { label: () => t('dm_stable'), color: '#1e293b', text: '#94a3b8' },
+  'B-':     { label: () => t('dm_Bm'),     color: '#1d4ed8', text: '#93c5fd' },
+  'B+':     { label: () => t('dm_Bp'),     color: '#b91c1c', text: '#fca5a5' },
+  'EC':     { label: () => t('dm_EC'),     color: '#9f1239', text: '#fda4af' },
+  'B+/EC':  { label: () => t('dm_BpEC'),  color: '#c2410c', text: '#fdba74' },
+  'A':      { label: () => t('dm_A'),      color: '#d97706', text: '#fde68a' },
+  'SF':     { label: () => t('dm_SF'),     color: '#7c3aed', text: '#c4b5fd' },
+  'P':      { label: () => t('dm_P'),      color: '#15803d', text: '#86efac' },
+  'n':      { label: () => t('dm_n'),      color: '#374151', text: '#9ca3af' },
+  '2B-':    { label: () => t('dm_2Bm'),   color: '#1e3a5f', text: '#7dd3fc' },
+};
+const DECAY_ORDER = ['stable','B-','B+','EC','B+/EC','A','SF','P','n','2B-'];
+const MAGIC = [2,8,20,28,50,82,126];
+
+// ── Build lookup ────────────────────────────────────────────────────────────
+const nuclideMap = {}; // nuclideMap[Z][A] = entry
+let maxZ = 0, maxN = 0;
+const decayCounts = {};
+DECAY_ORDER.forEach(d => decayCounts[d] = 0);
+
+NUCLIDES.forEach(([z, a, hl, dm, ab]) => {
+  const n = a - z;
+  if (!nuclideMap[z]) nuclideMap[z] = {};
+  // If same Z,A exists (metastable), prefer the longer-lived one
+  if (!nuclideMap[z][a] || (nuclideMap[z][a][2] !== Infinity && (hl === Infinity || hl > nuclideMap[z][a][2]))) {
+    nuclideMap[z][a] = [z, a, hl, dm, ab];
+  }
+  if (z > maxZ) maxZ = z;
+  if (n > maxN) maxN = n;
+  if (decayCounts[dm] !== undefined) decayCounts[dm]++;
+  else decayCounts[dm] = 1;
+});
+
+// ── State ───────────────────────────────────────────────────────────────────
+let view = { x: 0, y: 0, scale: 7 };
+let dragging = false, dragStart = null;
+let selectedNuclide = null;
+let hoveredNuclide = null;
+let activeDecays = new Set(DECAY_ORDER);
+
+const canvas = document.getElementById('chart');
+const ctx = canvas.getContext('2d');
+const wrap = document.getElementById('chart-wrap');
+const tooltip = document.getElementById('tooltip');
+
+// ── Resize canvas ───────────────────────────────────────────────────────────
+function resize() {
+  canvas.width = wrap.clientWidth;
+  canvas.height = wrap.clientHeight;
+  draw();
+}
+
+
+function hlSecondsLabel(s) {
+  if (s === Infinity || s <= 0) return t('hl_stable');
+  const abs = Math.abs(s);
+  if (abs < 1e-6) return (abs * 1e9).toFixed(1) + ' ns';
+  if (abs < 1e-3) return (abs * 1e6).toFixed(1) + ' μs';
+  if (abs < 1)    return (abs * 1e3).toFixed(1) + ' ms';
+  if (abs < 60)   return abs.toFixed(2) + ' s';
+  if (abs < 3600) return (abs/60).toFixed(2) + ' min';
+  if (abs < 86400) return (abs/3600).toFixed(2) + ' h';
+  if (abs < 3.156e7) return (abs/86400).toFixed(1) + ' d';
+  if (abs < 3.156e9) return (abs/3.156e7).toFixed(2) + ' yr';
+  if (abs < 3.156e12) return (abs/3.156e10).toFixed(2) + ' kyr';
+  if (abs < 3.156e15) return (abs/3.156e13).toFixed(2) + ' Myr';
+  if (abs < 3.156e18) return (abs/3.156e16).toFixed(2) + ' Gyr';
+  return (abs/3.156e19).toFixed(1) + ' Tyr';
+}
+
+// ── Color by decay mode ─────────────────────────────────────────────────────
+function getNuclideColor(entry) {
+  return (DECAY_META[entry[3]] || DECAY_META['n']).color;
+}
+
+// ── Filter check ────────────────────────────────────────────────────────────
+function isVisible(entry) {
+  return activeDecays.has(entry[3]);
+}
+
+// ── Coordinate transforms ───────────────────────────────────────────────────
+const MARGIN_L = 40, MARGIN_B = 28;
+
+function nuclideToCanvas(z, n) {
+  const cx = MARGIN_L + view.x + n * view.scale;
+  const cy = canvas.height - MARGIN_B - view.y - z * view.scale;
+  return [cx, cy];
+}
+
+function canvasToNuclide(cx, cy) {
+  // Cells are drawn at x = MARGIN_L + view.x + n*scale, so floor gives correct N.
+  // Cells are drawn at y = H - MARGIN_B - view.y - z*scale (top of cell),
+  // so (H - MARGIN_B - cy - view.y)/scale at cell-center = z - 0.5, which round() gives z.
+  const n = Math.floor((cx - MARGIN_L - view.x) / view.scale);
+  const z = Math.round((canvas.height - MARGIN_B - cy - view.y) / view.scale);
+  return [z, n];
+}
+
+// ── Drawing ─────────────────────────────────────────────────────────────────
+let visibleCount = 0;
+
+function draw() {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  // background
+  ctx.fillStyle = '#090d13';
+  ctx.fillRect(0, 0, W, H);
+
+  const cs = view.scale;
+
+  // Clip to chart area
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(MARGIN_L, 0, W - MARGIN_L, H - MARGIN_B);
+  ctx.clip();
+
+  // Valley of stability guideline
+  if (cs >= 3) {
+    ctx.strokeStyle = 'rgba(255,255,200,0.08)';
+    ctx.lineWidth = Math.max(1, cs * 0.9);
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    for (let z = 1; z <= 118; z++) {
+      const n = Math.round(z <= 20 ? z : z * (1 + 0.0075 * z));
+      const [cx, cy] = nuclideToCanvas(z, n);
+      if (z === 1) ctx.moveTo(cx + cs/2, cy + cs/2);
+      else ctx.lineTo(cx + cs/2, cy + cs/2);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Magic number lines
+  if (cs >= 3) {
+    ctx.strokeStyle = 'rgba(150,200,255,0.12)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    for (const m of MAGIC) {
+      // Vertical (N = magic)
+      const [x0] = nuclideToCanvas(0, m);
+      ctx.beginPath();
+      ctx.moveTo(x0 + cs/2, 0);
+      ctx.lineTo(x0 + cs/2, H - MARGIN_B);
+      ctx.stroke();
+      // Horizontal (Z = magic)
+      const [,y0] = nuclideToCanvas(m, 0);
+      ctx.beginPath();
+      ctx.moveTo(MARGIN_L, y0 + cs/2);
+      ctx.lineTo(W, y0 + cs/2);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  // Nuclides
+  visibleCount = 0;
+  const pad = cs > 4 ? 0.5 : 0;
+
+  for (const Z in nuclideMap) {
+    const z = parseInt(Z);
+    for (const A in nuclideMap[Z]) {
+      const entry = nuclideMap[Z][A];
+      if (!isVisible(entry)) continue;
+      const n = parseInt(A) - z;
+      const [cx, cy] = nuclideToCanvas(z, n);
+      if (cx + cs < MARGIN_L || cx > W || cy + cs < 0 || cy > H - MARGIN_B) continue;
+      visibleCount++;
+      const color = getNuclideColor(entry);
+      ctx.fillStyle = color;
+      ctx.fillRect(cx + pad, cy + pad, cs - pad*2, cs - pad*2);
+
+      // Border for selected nuclide
+      if (selectedNuclide && selectedNuclide[0] === z && selectedNuclide[1] === parseInt(A)) {
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = Math.max(1.5, cs * 0.12);
+        ctx.strokeRect(cx + pad, cy + pad, cs - pad*2, cs - pad*2);
+      }
+
+      // Symbol label (only if cells are big enough)
+      if (cs >= 18) {
+        const el = ELEMENTS[z];
+        const sym = el ? el.symbol : '?';
+        const label = `${sym}-${A}`;
+        ctx.fillStyle = (color === '#1e293b' || z < 0) ? '#94a3b8' : 'rgba(255,255,255,0.75)';
+        ctx.font = `${Math.max(7, cs * 0.28)}px sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, cx + cs/2, cy + cs/2);
+      }
+    }
+  }
+
+  // Hovered nuclide ring
+  if (hoveredNuclide) {
+    const [hz, ha] = hoveredNuclide;
+    const hn = ha - hz;
+    const [cx, cy] = nuclideToCanvas(hz, hn);
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(cx, cy, cs, cs);
+  }
+
+  ctx.restore();
+
+  // ── Axes ──────────────────────────────────────────────────────────────────
+  ctx.fillStyle = '#0d1117';
+  ctx.fillRect(0, 0, MARGIN_L, H);
+  ctx.fillRect(0, H - MARGIN_B, W, MARGIN_B);
+
+  ctx.fillStyle = '#7d8590';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+
+  // Z axis labels
+  const zStep = cs >= 14 ? 5 : cs >= 6 ? 10 : cs >= 3 ? 20 : 40;
+  for (let z = 0; z <= 118; z += zStep) {
+    const [,cy] = nuclideToCanvas(z, 0);
+    if (cy < 0 || cy > H - MARGIN_B) continue;
+    ctx.fillText(z, MARGIN_L - 4, cy + cs/2);
+    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    ctx.fillRect(MARGIN_L, cy + cs/2, W - MARGIN_L, 0.5);
+    ctx.fillStyle = '#7d8590';
+  }
+
+  // N axis labels
+  const nStep = cs >= 14 ? 5 : cs >= 6 ? 10 : cs >= 3 ? 20 : 40;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  for (let n = 0; n <= maxN + 5; n += nStep) {
+    const [cx] = nuclideToCanvas(0, n);
+    if (cx < MARGIN_L || cx > W) continue;
+    ctx.fillText(n, cx + cs/2, H - MARGIN_B + 4);
+  }
+
+  // Axis titles
+  ctx.save();
+  ctx.translate(9, (H - MARGIN_B)/2);
+  ctx.rotate(-Math.PI/2);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#7d8590';
+  ctx.font = '11px sans-serif';
+  ctx.fillText(t('ax_protons'), 0, 0);
+  ctx.restore();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+  ctx.fillText(t('ax_neutrons'), W/2, H - 2);
+
+  document.getElementById('count-badge').textContent = visibleCount.toLocaleString() + ' ' + t('isotopes');
+}
+
+// ── Mouse interaction ────────────────────────────────────────────────────────
+canvas.addEventListener('mousedown', e => {
+  if (e.button !== 0) return;
+  dragging = true;
+  dragStart = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, moved: false };
+});
+canvas.addEventListener('mousemove', e => {
+  if (dragging) {
+    const dx = e.clientX - dragStart.x;
+    const dy = e.clientY - dragStart.y;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) dragStart.moved = true;
+    view.x = dragStart.vx + dx;
+    view.y = dragStart.vy - dy;
+    draw();
+    tooltip.style.display = 'none';
+    return;
+  }
+  handleHover(e);
+});
+canvas.addEventListener('mouseup', e => {
+  if (!dragging) return;
+  const wasDrag = dragStart && dragStart.moved;
+  dragging = false;
+  if (!wasDrag) handleClick(e);
+});
+canvas.addEventListener('mouseleave', () => {
+  tooltip.style.display = 'none';
+  hoveredNuclide = null;
+  document.getElementById('hover-status').textContent = '';
+  draw();
+});
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const factor = e.deltaY < 0 ? 1.15 : 1/1.15;
+  const oldScale = view.scale;
+  view.scale = Math.max(1.5, Math.min(60, view.scale * factor));
+  const scaleDiff = view.scale - oldScale;
+  const nx = (mx - MARGIN_L - view.x) / oldScale;
+  const ny = (canvas.height - MARGIN_B - my - view.y) / oldScale;
+  view.x -= nx * scaleDiff;
+  view.y -= ny * scaleDiff;
+  draw();
+}, { passive: false });
+
+// ── Touch support (pan + pinch-zoom + tap) ────────────────────────────────────
+let lastPinchDist = null;
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (e.touches.length === 1) {
+    const t = e.touches[0];
+    dragging = true;
+    dragStart = { x: t.clientX, y: t.clientY, vx: view.x, vy: view.y, moved: false };
+    lastPinchDist = null;
+  } else if (e.touches.length === 2) {
+    dragging = false;
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    lastPinchDist = Math.sqrt(dx*dx + dy*dy);
+  }
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (e.touches.length === 1 && dragging) {
+    const t = e.touches[0];
+    const dx = t.clientX - dragStart.x;
+    const dy = t.clientY - dragStart.y;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) dragStart.moved = true;
+    view.x = dragStart.vx + dx;
+    view.y = dragStart.vy - dy;
+    draw();
+  } else if (e.touches.length === 2 && lastPinchDist !== null) {
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    const factor = dist / lastPinchDist;
+    const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+    const my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+    const rect = canvas.getBoundingClientRect();
+    const oldScale = view.scale;
+    view.scale = Math.max(1.5, Math.min(60, view.scale * factor));
+    const scaleDiff = view.scale - oldScale;
+    const nx = (mx - rect.left - MARGIN_L - view.x) / oldScale;
+    const ny = (canvas.height - MARGIN_B - (my - rect.top) - view.y) / oldScale;
+    view.x -= nx * scaleDiff;
+    view.y -= ny * scaleDiff;
+    lastPinchDist = dist;
+    draw();
+  }
+}, { passive: false });
+canvas.addEventListener('touchend', e => {
+  if (dragging) {
+    const wasDrag = dragStart && dragStart.moved;
+    dragging = false;
+    if (!wasDrag && e.changedTouches.length === 1) {
+      const t = e.changedTouches[0];
+      handleClick({ clientX: t.clientX, clientY: t.clientY });
+    }
+  }
+  if (e.touches.length < 2) lastPinchDist = null;
+});
+canvas.addEventListener('touchcancel', () => { dragging = false; lastPinchDist = null; });
+
+function handleHover(e) {
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  if (mx < MARGIN_L || my > canvas.height - MARGIN_B) {
+    tooltip.style.display = 'none';
+    hoveredNuclide = null;
+    draw();
+    return;
+  }
+  const [z, n] = canvasToNuclide(mx, my);
+  const a = z + n;
+  const entry = (nuclideMap[z] && nuclideMap[z][a]) ? nuclideMap[z][a] : null;
+  const el = ELEMENTS[z];
+  document.getElementById('hover-status').textContent = entry
+    ? `${el ? el.symbol : '?'}-${a} (Z=${z}, N=${n}, A=${a})`
+    : (z >= 0 && n >= 0 ? `Z=${z}, N=${n}` : '');
+  if (!entry || !isVisible(entry)) {
+    tooltip.style.display = 'none';
+    if (hoveredNuclide) { hoveredNuclide = null; draw(); }
+    return;
+  }
+  hoveredNuclide = [z, a];
+  draw();
+  showTooltip(entry, e.clientX, e.clientY);
+}
+
+function handleClick(e) {
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const [z, n] = canvasToNuclide(mx, my);
+  const a = z + n;
+  const entry = (nuclideMap[z] && nuclideMap[z][a]) ? nuclideMap[z][a] : null;
+  if (entry && isVisible(entry)) {
+    selectedNuclide = [z, a];
+    showInfoPanel(entry);
+  } else {
+    selectedNuclide = null;
+    clearInfoPanel();
+  }
+  draw();
+}
+
+function showTooltip(entry, cx, cy) {
+  const [z, a, hl, dm, ab] = entry;
+  const el = ELEMENTS[z] || { symbol: '?', name: 'Unknown' };
+  const n = a - z;
+  const commonName = ISOTOPE_NAMES[`${z}-${a}`] || null;
+  document.getElementById('tt-sym').textContent = `${el.symbol}-${a}`;
+  document.getElementById('tt-sym').style.color = (DECAY_META[dm]||DECAY_META['n']).text;
+  document.getElementById('tt-name').textContent = commonName || elemLocalName(z);
+  const rows = [
+    ['Z', z], ['N', n], ['A', a],
+    [t('tt_decay'), dm], [t('tt_halflife'), hlSecondsLabel(hl)],
+  ];
+  if (ab > 0) rows.push([t('tt_abundance'), ab.toFixed(4) + '%']);
+  document.getElementById('tt-rows').innerHTML = rows
+    .map(([k,v]) => `<span class="tt-k">${k}</span><span class="tt-v">${v}</span>`).join('');
+  const tw = 190, th = commonName ? 150 : 130;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  let tx = cx + 14, ty = cy - 20;
+  if (tx + tw > vw - 8) tx = cx - tw - 14;
+  if (ty + th > vh - 8) ty = cy - th + 20;
+  tooltip.style.left = tx + 'px';
+  tooltip.style.top = ty + 'px';
+  tooltip.style.display = 'block';
+}
+
+function showInfoPanel(entry) {
+  const [z, a, hl, dm, ab] = entry;
+  const el = ELEMENTS[z] || { symbol: '?', name: 'Unknown' };
+  const n = a - z;
+  const meta = DECAY_META[dm] || DECAY_META['n'];
+  const commonName = ISOTOPE_NAMES[`${z}-${a}`] || null;
+  const uses = ISOTOPE_USES[`${z}-${a}`] || null;
+  const cats = ISOTOPE_CATS[`${z}-${a}`] || [];
+  const catBadges = cats.map(c => {
+    const cm = CAT_META[c] || {};
+    return `<span style="display:inline-flex;align-items:center;gap:3px;background:${cm.bg};color:${cm.text};border-radius:5px;padding:2px 7px;font-size:11px;font-weight:600;white-space:nowrap">${cm.icon} ${typeof cm.label === 'function' ? cm.label() : cm.label}</span>`;
+  }).join('');
+  const ic = document.getElementById('info-content');
+  ic.className = '';
+  document.getElementById('info-panel').classList.add('active');
+  ic.innerHTML = `
+    <div class="info-symbol-big" style="color:${meta.text}">${el.symbol}</div>
+    <sup style="font-size:18px;color:var(--muted)">${a}</sup>
+    <div class="info-nuclide-name">${elemLocalName(z)}-${a}</div>
+    ${commonName ? `<div style="font-size:12px;color:#facc15;font-style:italic;margin-bottom:6px">${commonName}</div>` : ''}
+    ${catBadges ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">${catBadges}</div>` : ''}
+    <div class="decay-badge" style="background:${meta.color};color:${meta.text}">${typeof meta.label === 'function' ? meta.label() : meta.label}</div>
+    <div style="margin-top:16px">
+      <div class="info-row"><span class="ik">${t('ik_z')}</span><span class="iv">${z}</span></div>
+      <div class="info-row"><span class="ik">${t('ik_n')}</span><span class="iv">${n}</span></div>
+      <div class="info-row"><span class="ik">${t('ik_a')}</span><span class="iv">${a}</span></div>
+      <div class="info-row"><span class="ik">${t('ik_elem')}</span><span class="iv">${elemLocalName(z)}</span></div>
+      <div class="info-row"><span class="ik">${t('ik_sym')}</span><span class="iv">${el.symbol}</span></div>
+      <div class="info-row"><span class="ik">${t('ik_hl')}</span><span class="iv">${hlSecondsLabel(hl)}</span></div>
+      <div class="info-row"><span class="ik">${t('ik_dm')}</span><span class="iv">${dm}</span></div>
+      ${ab > 0 ? `<div class="info-row"><span class="ik">${t('ik_ab')}</span><span class="iv">${ab.toFixed(4)}%</span></div>` : ''}
+      <div class="info-row"><span class="ik">${t('ik_nz')}</span><span class="iv">${(n/z).toFixed(3)}</span></div>
+    </div>
+    ${uses ? `
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+      <div style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:6px">Applications${LANG !== 'en' ? ' <span style="opacity:.5;font-weight:400;text-transform:none;letter-spacing:0">(en)</span>' : ''}</div>
+      <div style="font-size:11.5px;color:#cbd5e1;line-height:1.6">${uses}</div>
+    </div>` : ''}
+  `;
+}
+
+function clearInfoPanel() {
+  const ic = document.getElementById('info-content');
+  ic.className = 'empty';
+  ic.innerHTML = `<p>${t('click_hint')}</p>`;
+  document.getElementById('info-panel').classList.remove('active');
+}
+
+// ── Legend ───────────────────────────────────────────────────────────────────
+function buildLegend() {
+  const leg = document.getElementById('legend');
+  leg.innerHTML = '';
+  for (const dm of DECAY_ORDER) {
+    const meta = DECAY_META[dm];
+    const cnt = decayCounts[dm] || 0;
+    const div = document.createElement('div');
+    div.className = 'legend-item' + (activeDecays.has(dm) ? '' : ' inactive');
+    div.dataset.dm = dm;
+    div.innerHTML = `<div class="legend-color" style="background:${meta.color};border:1px solid ${meta.text}33"></div><span class="legend-label">${typeof meta.label === 'function' ? meta.label() : meta.label}</span><span class="legend-count">${cnt}</span>`;
+    div.addEventListener('click', () => {
+      if (activeDecays.has(dm)) activeDecays.delete(dm);
+      else activeDecays.add(dm);
+      div.className = 'legend-item' + (activeDecays.has(dm) ? '' : ' inactive');
+      draw();
+    });
+    leg.appendChild(div);
+  }
+}
+buildLegend();
+
+// ── Element centre lookup (best stable/longest-lived isotope per Z) ──────────
+const elementCenterN = {};
+for (const Z in nuclideMap) {
+  const z = parseInt(Z);
+  let bestN = null, bestAb = -1, bestHl = -1;
+  for (const A in nuclideMap[Z]) {
+    const [,,hl,,ab] = nuclideMap[Z][A];
+    if (hl === Infinity && ab > bestAb) { bestN = parseInt(A) - z; bestAb = ab; }
+  }
+  if (bestN === null) {
+    for (const A in nuclideMap[Z]) {
+      const [,,hl] = nuclideMap[Z][A];
+      if (hl > bestHl) { bestN = parseInt(A) - z; bestHl = hl; }
+    }
+  }
+  elementCenterN[z] = bestN ?? Math.round(z <= 20 ? z : z * (1 + 0.0075 * z));
+}
+
+// ── Go-to-element: zoom in and centre ────────────────────────────────────────
+const GOTO_ZOOM = 40;
+
+function goToElement(z) {
+  const n0 = elementCenterN[z];
+  view.scale = GOTO_ZOOM;
+  // Centre the middle of cell (z, n0) on screen
+  const s = view.scale;
+  view.x = canvas.width  / 2 - s / 2 - MARGIN_L - n0 * s;
+  view.y = canvas.height / 2 + s / 2 - MARGIN_B  - z  * s;
+  // Highlight and show info for the most abundant/long-lived isotope
+  const A0 = n0 + z;
+  const entry = nuclideMap[z] && nuclideMap[z][A0];
+  if (entry) { selectedNuclide = [z, A0]; showInfoPanel(entry); }
+  draw();
+}
+
+// ── Element list (persistent, filterable) ────────────────────────────────────
+const elemSearch = document.getElementById('elem-search');
+const elemList   = document.getElementById('elem-list');
+let elActiveIdx  = -1;
+let elVisible    = Object.keys(ELEMENTS).map(Number); // all Z values
+
+function renderElemList(query) {
+  query = (query || '').toLowerCase().trim();
+  elVisible = [];
+  for (const zs in ELEMENTS) {
+    const z = parseInt(zs), el = ELEMENTS[z];
+    const localName = elemLocalName(z).toLowerCase();
+    const allNames = [el.symbol, el.name, localName,
+      ...Object.values(ELEMENT_NAMES).map(ln => (ln[z] || ''))
+    ].map(n => n.toLowerCase());
+    if (!query
+        || String(z) === query
+        || allNames.some(n => n.startsWith(query) || n.includes(query))) {
+      elVisible.push(z);
+    }
+  }
+  elActiveIdx = -1;
+  elemList.innerHTML = elVisible.map((z, i) => {
+    const el = ELEMENTS[z];
+    return `<div class="el-item" data-z="${z}">
+      <span class="dd-sym">${el.symbol}</span>
+      <span style="flex:1">${elemLocalName(z)}</span>
+      <span class="dd-z">${z}</span>
+    </div>`;
+  }).join('');
+  elemList.querySelectorAll('.el-item').forEach(item => {
+    item.addEventListener('click', () => {
+      pickElement(parseInt(item.dataset.z), item);
+    });
+  });
+}
+
+function pickElement(z, itemEl) {
+  elemList.querySelectorAll('.el-item').forEach(it => it.classList.remove('el-active'));
+  if (itemEl) itemEl.classList.add('el-active');
+  elemSearch.value = '';
+  goToElement(z);
+  renderElemList(''); // restore full list
+}
+
+function moveElActive(dir) {
+  const items = elemList.querySelectorAll('.el-item');
+  if (!items.length) return;
+  elActiveIdx = Math.max(0, Math.min(items.length - 1, elActiveIdx + dir));
+  items.forEach((it, i) => it.classList.toggle('el-active', i === elActiveIdx));
+  items[elActiveIdx].scrollIntoView({ block: 'nearest' });
+}
+
+elemSearch.addEventListener('input', e => renderElemList(e.target.value));
+elemSearch.addEventListener('keydown', e => {
+  if (e.key === 'ArrowDown')  { e.preventDefault(); moveElActive(+1); }
+  else if (e.key === 'ArrowUp')   { e.preventDefault(); moveElActive(-1); }
+  else if (e.key === 'Enter') {
+    if (elActiveIdx >= 0 && elVisible[elActiveIdx]) pickElement(elVisible[elActiveIdx]);
+    else if (elVisible.length) pickElement(elVisible[0]);
+  } else if (e.key === 'Escape') { elemSearch.value = ''; renderElemList(''); }
+});
+
+renderElemList(''); // populate on load
+applyTranslations();
+
+
+// ── Zoom buttons ──────────────────────────────────────────────────────────────
+document.getElementById('zoom-in').addEventListener('click', () => {
+  const cx = canvas.width/2, cy = canvas.height/2;
+  zoomAt(cx, cy, 1.3);
+});
+document.getElementById('zoom-out').addEventListener('click', () => {
+  const cx = canvas.width/2, cy = canvas.height/2;
+  zoomAt(cx, cy, 1/1.3);
+});
+document.getElementById('zoom-reset').addEventListener('click', resetView);
+function zoomAt(mx, my, factor) {
+  const old = view.scale;
+  view.scale = Math.max(1.5, Math.min(60, view.scale * factor));
+  const nx = (mx - MARGIN_L - view.x) / old;
+  const ny = (canvas.height - MARGIN_B - my - view.y) / old;
+  view.x -= nx * (view.scale - old);
+  view.y -= ny * (view.scale - old);
+  draw();
+}
+
+// ── Keyboard shortcuts ────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  if (e.key === 'r' || e.key === 'R') resetView();
+  if (e.key === 'Escape') { selectedNuclide = null; searchHighlight = null; clearInfoPanel(); draw(); }
+  if (e.key === '+' || e.key === '=') zoomAt(canvas.width/2, canvas.height/2, 1.2);
+  if (e.key === '-') zoomAt(canvas.width/2, canvas.height/2, 1/1.2);
+  const pan = 40;
+  if (e.key === 'ArrowLeft') { view.x -= pan; draw(); }
+  if (e.key === 'ArrowRight') { view.x += pan; draw(); }
+  if (e.key === 'ArrowUp') { view.y -= pan; draw(); }
+  if (e.key === 'ArrowDown') { view.y += pan; draw(); }
+});
+
+// ── Initial view ──────────────────────────────────────────────────────────────
+function resetView() {
+  const W = canvas.width, H = canvas.height;
+  const chartW = W - MARGIN_L;
+  const chartH = H - MARGIN_B;
+  const scaleN = chartW / (maxN + 10);
+  const scaleZ = chartH / (maxZ + 5);
+  view.scale = Math.max(2, Math.min(scaleN, scaleZ));
+  view.x = 5 * view.scale;
+  view.y = 5 * view.scale;
+  draw();
+}
+
+window.addEventListener('resize', resize);
+resize();
+resetView();
+setTimeout(function() { resize(); resetView(); }, 150);
+
+// ── Mobile sidebar toggle ─────────────────────────────────────────────────────
+(function() {
+  var btn = document.getElementById('sb-toggle');
+  var overlay = document.getElementById('sb-overlay');
+  var sb = document.getElementById('sidebar');
+  if (!btn) return;
+  btn.addEventListener('click', function() {
+    var open = sb.classList.toggle('open');
+    overlay.classList.toggle('open', open);
+    btn.textContent = open ? 'X CLOSE' : '= LEGEND';
+  });
+  overlay.addEventListener('click', function() {
+    sb.classList.remove('open');
+    overlay.classList.remove('open');
+    btn.textContent = '= LEGEND';
+  });
+})();
+</script>
+</body>
+</html>
