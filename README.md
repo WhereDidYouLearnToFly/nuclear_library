@@ -19,6 +19,8 @@ No build step: plain HTML, CSS and JavaScript.
 python -m http.server 8080 --directory site
 ```
 
+Or just double-click `run_site.bat`: it starts the server and opens the browser.
+
 Open <http://localhost:8080/en/index.html>. The site uses root-relative paths
 (`/assets/...`), so it must be served from the web root, not a subfolder.
 
